@@ -2,7 +2,7 @@ import pandas as pd
 import sqlite3
 import os
 #region setup -----
-os.chdir('C:/users/jeffb/Desktop/Life/personal-projects/de/covid_redux')
+# os.chdir('covid_redux')
 base_url = 'https://raw.githubusercontent.com/jeffbrennan/TexasPandemics/master'
 conn_stage = sqlite3.connect('db/staging.db')
 conn_prod = sqlite3.connect('db/prod.db')
@@ -38,8 +38,8 @@ tableau_county_tpr = pd.read_csv(f'{base_url}/tableau/county_TPR.csv')
 tableau_county_tpr.to_sql('county_TPR', con=conn_prod, if_exists='replace')
 #region stats -----
 
-tableau_stacked_trends = pd.read_csv(f'{base_url}/tableau/stacked_critical_trends.csv')
-tableau_county_tpr.to_sql('stacked_critical_trends', con=conn_prod, if_exists='replace')
+tableau_stacked_rt = pd.read_csv(f'{base_url}/tableau/stacked_rt.csv')
+tableau_stacked_rt.to_sql('stacked_rt', con=conn_prod, if_exists='replace')
 #endregion
 
 #endregion
