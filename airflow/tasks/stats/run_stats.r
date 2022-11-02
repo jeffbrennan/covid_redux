@@ -1,4 +1,4 @@
-# Data manipulation & cleaning
+#region libraries -----
 library(tidyverse)
 library(reshape2)
 library(nlme)        # gapply
@@ -15,9 +15,16 @@ library(zoo)
 # library(astsa)
 # library(fpp2)
 
-select = dplyr::select
+# database
+library(RSQLite)
 
-# setup -----
+# Data manipulation & cleaning
+
+select = dplyr::select
+conn_prod = dbConnect(SQLite(), 'db/prod.db')
+conn_stage = dbConnect(SQLite(), 'db/staging.db')
+
+# functions -----
 Clean_Data = function(df, level_type) {
   if (level_type == 'State') {
     clean_df  = df %>%
@@ -162,11 +169,20 @@ covid.rt = function(mydata, threshold) {
 
 
 # Obtain dfs for analysis
-# TODO: setup sqllite here:
-county = read.csv("tableau/county.csv") %>%
-  dplyr::select(Date, Cases_Daily_Imputed, Tests_Daily,
-                County, TSA_Combined, PHR_Combined,
-                Metro_Area, Population_DSHS) %>%
+county_raw = dbGetQuery(
+  conn_prod,
+  "
+  select Date, County, Cases_Daily_Imputed from main.county
+  ")
+county_metadata = dbGetQuery(
+  conn_stage,
+  "
+  select * from county_names
+  "
+)
+
+county = county_raw %>%
+  left_join(county_metadata, by = 'County') %>%
   mutate(Date = as.Date(Date)) %>%
   rename(TSA = TSA_Combined, PHR = PHR_Combined, Metro = Metro_Area)
 
@@ -190,6 +206,7 @@ case_quant = County_df %>%
 
 
 # Generate Rt estimates for each county, using 70% quantile of cases in past 3 weeks as threshold
+# TODO: run in parallel
 start_time = Sys.time()
 county.rt.output = nlme::gapply(County_df, FUN = covid.rt,
                                  groups = County_df$County, threshold = case_quant)
@@ -221,15 +238,9 @@ RT_County_df = RT_County_df_all %>%
 good_counties = RT_County_df$County %>% unique() %>% length()
 good_counties/254 # = 0.744
 
-district = readxl::read_xlsx('tableau/district_school_reopening.xlsx', sheet=1) %>%
-             mutate(LEA = as.character(LEA),
-                    Date = as.Date(Date))
 
-district_dates =
-  data.frame('Date' = rep(unique(district$Date), each = 254),
-             'County' = rep(unique(County_df$County), times = length(unique(district$Date))))
-
-TPR_df = read.csv('tableau/county_TPR.csv') %>%
+# TPR_df = read.csv('tableau/county_TPR.csv') %>%
+TPR_df = dbGetQuery(conn_prod, "select * from main.county_TPR")
   dplyr::select(-contains('Rt')) %>%
   mutate(Date = as.Date(Date))
 
@@ -242,7 +253,6 @@ cms_TPR_padded =
   TPR_df %>%
     filter(Date %in% cms_dates) %>%
     left_join(., RT_County_df[, c('County', 'Date', 'Rt')], by = c('County', 'Date')) %>%
-    full_join(., district_dates, by = c('County', 'Date')) %>%
     group_by(County) %>%
     arrange(County, Date) %>%
     tidyr::fill(TPR, .direction = 'up') %>%
@@ -257,11 +267,11 @@ cpr_TPR = TPR_df %>%
   filter(!(Date %in% cms_dates)) %>%
   left_join(., RT_County_df[, c('County', 'Date', 'Rt')], by = c('County', 'Date'))
 
-county_TPR = cms_TPR_padded %>% filter(!(Date %in% district_dates$Date)) %>% rbind(cpr_TPR) %>% arrange(County, Date)
-county_TPR_sd = cms_TPR_padded %>%  filter(Date %in% district_dates$Date) %>% rbind(cpr_TPR) %>% arrange(County, Date)
+county_TPR = cms_TPR_padded  %>% rbind(cpr_TPR) %>% arrange(County, Date)
+county_TPR_sd = cms_TPR_padded  %>% rbind(cpr_TPR) %>% arrange(County, Date)
 
-write.csv(county_TPR, 'tableau/county_TPR.csv', row.names = FALSE)
-write.csv(county_TPR_sd, 'tableau/county_TPR_sd.csv', row.names = FALSE)
+dbWriteTable(conn_prod, 'main.county_TPR', cpr_TPR)
+# write.csv(county_TPR, 'tableau/county_TPR.csv', row.names = FALSE)
 
 ## TSA
 RT_TSA_output = nlme::gapply(TSA_df, FUN=covid.rt, groups=TSA_df$TSA, threshold = case_quant)
@@ -302,5 +312,6 @@ RT_Combined_df =
   filter(Date != max(Date)) %>%
   dplyr::select(-c(threshold, case_avg))
 
-write.csv(RT_Combined_df, 'tableau/stacked_rt.csv', row.names = FALSE)
+dbWriteTable(conn_prod, 'main.stacked_rt', RT_Combined_df, overwrite = TRUE)
+# write.csv(RT_Combined_df, 'tableau/stacked_rt.csv', row.names = FALSE)
 
