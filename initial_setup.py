@@ -11,7 +11,7 @@ conn_prod = sqlite3.connect('db/prod.db')
 #region helpers -----
 # county lookup
 county_lookup = pd.read_csv(f'{base_url}/tableau/county.csv')
-county_lookup_final = county_lookup[['County', 'TSA_Combined', 'PHR_Combined', 'Population_DSHS']]
+county_lookup_final = county_lookup[['County', 'TSA_Combined', 'PHR_Combined', 'Metro_Area', 'Population_DSHS']]
 county_lookup_final.drop_duplicates(inplace=True)
 
 county_lookup_final.to_sql('county_names', conn_stage, if_exists='replace', index=False)
