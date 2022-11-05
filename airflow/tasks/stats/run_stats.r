@@ -29,7 +29,7 @@ N_CORES = availableCores() / 2
 Clean_Data = function(df, level_type) {
   if (level_type == 'State') {
     clean_df = df %>%
-      dplyr::select(Date, Cases_Daily_Imputed, Population_DSHS) %>%
+      select(Date, Cases_Daily_Imputed, Population_DSHS) %>%
       group_by(Date) %>%
       summarize(across(c(Cases_Daily_Imputed, Population_DSHS), ~sum(., na.rm = TRUE))) %>%
       ungroup() %>%
@@ -40,7 +40,7 @@ Clean_Data = function(df, level_type) {
 
   } else {
     clean_df = df %>%
-      dplyr::select(Date, !!as.name(level_type), Cases_Daily_Imputed, Population_DSHS) %>%
+      select(Date, !!as.name(level_type), Cases_Daily_Imputed, Population_DSHS) %>%
       group_by(Date, !!as.name(level_type)) %>%
       summarize(across(c(Cases_Daily_Imputed, Population_DSHS), ~sum(., na.rm = TRUE))) %>%
       ungroup() %>%
@@ -52,38 +52,29 @@ Clean_Data = function(df, level_type) {
   return(clean_df %>% ungroup())
 }
 
-rt.df.extraction = function(Rt.estimate.output) {
-
+Parse_RT_Results = function(rt_results) {
   # extract r0 estimate values into dataframe
-  rt.df = setNames(stack(Rt.estimate.output$estimates$TD$R)[2:1], c('Date', 'Rt'))
-  rt.df$Date = as.Date(rt.df$Date)
-
-  # get 95% CI
-  CI.lower.list = Rt.estimate.output$estimates$TD$conf.int$lower
-  CI.upper.list = Rt.estimate.output$estimates$TD$conf.int$upper
-
-  #use unlist function to format as vector
-  CI.lower = unlist(CI.lower.list, recursive = TRUE, use.names = TRUE)
-  CI.upper = unlist(CI.upper.list, recursive = TRUE, use.names = TRUE)
-
-  rt.df$lower = CI.lower
-  rt.df$upper = CI.upper
-
-  rt.df = rt.df %>%
-    mutate(lower = replace(lower, Rt == 0, NA)) %>%
-    mutate(upper = replace(upper, Rt == 0, NA)) %>%
-    mutate(Rt = replace(Rt, Rt == 0, NA))
-
-  return(rt.df)
+  result_df = data.frame('Rt' = rt_results[['R']]) %>%
+    mutate(Date = as.Date(row.names(.))) %>%
+    as.data.frame(row.names = 1:nrow(.)) %>%
+    mutate(lower = rt_results[['conf.int']][['lower']]) %>%
+    mutate(upper = rt_results[['conf.int']][['upper']]) %>%
+    rowwise() %>%
+    mutate(across(c(Rt, lower, upper), ~ifelse(Rt == 0, NA, .))) %>%
+    ungroup() %>%
+    select(Date, Rt, lower, upper)
+  return(result_df)
 }
 
-Calculate_RT = function(case_df, level, threshold) {
+Calculate_RT = function(level, threshold) {
   set.seed(1)
   gen.time = generation.time("gamma", c(3.96, 4.75))
-  pop.DSHS = case_df$Population_DSHS[1]
+  pop.DSHS = population_lookup %>%
+    filter(Level == level) %>%
+    pull(Population_DSHS)
 
   #change na values to 0
-  case_df = case_df %>%
+  case_df = cleaned_cases_combined %>%
     filter(Level == level) %>%
     mutate(Cases_Daily_Imputed = ifelse(is.na(Cases_Daily_Imputed) | Cases_Daily_Imputed < 0, 0, Cases_Daily_Imputed))
 
@@ -94,7 +85,6 @@ Calculate_RT = function(case_df, level, threshold) {
     pull(case_avg)
 
   message(glue("{level} three week case avg {round(recent_case_avg, 2)}"))
-  # TODO: lookup value in lookup df instead of repeating value n = nrow times in run df
 
   cases_ma7 = case_df %>%
     mutate(MA_7day = rollmean(Cases_Daily_Imputed, k = 7, na.pad = TRUE, align = 'right')) %>%
@@ -120,10 +110,9 @@ Calculate_RT = function(case_df, level, threshold) {
       )
     )
 
-    rt_df = rt.df.extraction(rt_raw) %>%
-      select(Date, Rt, lower, upper) %>%
+    rt_df = Parse_RT_Results(rt_raw$estimates$TD) %>%
       mutate(case_avg = recent_case_avg) %>%
-      mutate(threshold = ifelse(recent_case_avg > threshold, 'Above', 'Below'))
+      mutate(threshold = ifelse(recent_case_avg > case_quant, 'Above', 'Below'))
 
     return(rt_df)
   },
@@ -164,6 +153,10 @@ cleaned_cases_combined = map(case_levels, ~Clean_Data(county, .)) %>%
   rbindlist(., fill = TRUE) %>%
   relocate(Level_Type, .before = 'Level')
 
+population_lookup = cleaned_cases_combined %>%
+  select(Level, Population_DSHS) %>%
+  distinct()
+
 case_quant = cleaned_cases_combined %>%
   filter(Level_Type == 'County') %>%
   filter(Date >= (max(Date) - as.difftime(3, unit = 'weeks'))) %>%
@@ -174,23 +167,51 @@ case_quant = cleaned_cases_combined %>%
   pull(case_quant)
 
 # Generate Rt estimates for each county, using 70% quantile of cases in past 3 weeks as threshold
-# TODO: run in parallel
 start_time = Sys.time()
-df_levels = unique(furrr_test$Level)
+df_levels = unique(cleaned_cases_combined$Level)
+# df_levels = 'Harris'
+
 
 message(glue('Running RT on {length(df_levels)} levels using {N_CORES} cores'))
-plan(multicore, workers = N_CORES)
+# plan(multisession, gc = TRUE)
+# rt_output = furrr::future_map(df_levels[1:20],
+#                                ~Calculate_RT(case_df = cleaned_cases_combined,
+#                                              level = .,
+#                                              threshold = case_quant),
+#                                .options = furrr_options(seed = TRUE)
+# )
+# rt_output = map(df_levels[1:20],  ~Calculate_RT(case_df = cleaned_cases_combined,
+#                                              level = .,
+#                                              threshold = case_quant)
+#         )
+
+
+# TODO: figure this out
+library(snow)
+library(parallel)
 start_time = Sys.time()
-rt_output = furrr::future_walk(df_levels,
-                               ~Calculate_RT(case_df = cleaned_cases_combined,
-                                             level = .,
-                                             threshold = case_quant),
-                               .options = furrr_options(seed = TRUE)
+df_levels = df_levels[1:24]
+cl = makeCluster(12, type = "SOCK")
+clusterExport(cl, list("Calculate_RT", "Parse_RT_Results", "population_lookup", "cleaned_cases_combined"), envir = environment())
+clusterEvalQ(cl, c(library(R0),
+                   library(dplyr),
+                   library(tibble),
+                   library(glue),
+                   library(tidyr),
+                   library(zoo)
 )
+)
+
+rt_output = clusterMap(cl = cl,
+                       fun = function(x) Calculate_RT(level = x,
+                                                      threshold = case_quant),
+                       df_levels
+)
+stopCluster(cl)
 run_time = Sys.time() - start_time
-# 10 secs with 2 workers
+# 10 secs with 2 workers for 5 levels
 avg_per_level = run_time / length(df_levels)
-message(glue('RT calculated for {length(df_levels} [AVG CALCULATION TIME: {round(avg_per_level, 2)}]'))
+message(glue('RT calculated for {length(df_levels)} [AVG CALCULATION TIME: {round(avg_per_level, 2)}] seconds / level'))
 
 rt_combined = rt_output %>%
   rbindlist(., fill = TRUE)
@@ -203,7 +224,7 @@ error_counties = RT_County_df_all %>%
   mutate(Rt_error = factor(ifelse(is.na(Rt) | Rt == 0 | Rt > 10, 1, 0))) %>%
   filter(Date > min_date & Date != max(Date)) %>%
   filter(is.na(CI_error) | CI_error == 1 | Rt_error == 1) %>%
-  dplyr::select(County) %>%
+  select(County) %>%
   distinct() %>%
   unlist()
 
@@ -218,7 +239,7 @@ good_counties / 254 # = 0.744
 
 # TPR_df = read.csv('tableau/county_TPR.csv') %>%
 TPR_df = dbGetQuery(conn_prod, "select * from main.county_TPR")
-dplyr::select(-contains('Rt')) %>%
+select(-contains('Rt')) %>%
   mutate(Date = as.Date(Date))
 
 cms_dates = list.files('C:/Users/jeffb/Desktop/Life/personal-projects/COVID/original-sources/historical/cms_tpr') %>%
