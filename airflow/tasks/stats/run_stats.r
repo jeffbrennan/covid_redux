@@ -1,5 +1,6 @@
 #region libraries -----
 library(tidyverse)
+library(lubridate)
 library(glue)
 library(reshape2)
 library(nlme)        # gapply
@@ -20,10 +21,11 @@ library(zoo)
 library(RSQLite)
 
 
-select = dplyr::select
-conn_prod = dbConnect(SQLite(), 'db/prod.db')
+select     = dplyr::select
+conn_prod  = dbConnect(SQLite(), 'db/prod.db')
 conn_stage = dbConnect(SQLite(), 'db/staging.db')
-N_CORES = availableCores() / 2
+N_CORES    = availableCores() / 2
+GENERATION_TIME = generation.time("gamma", c(3.96, 4.75))
 
 # functions -----
 Clean_Data = function(df, level_type) {
@@ -52,85 +54,104 @@ Clean_Data = function(df, level_type) {
   return(clean_df %>% ungroup())
 }
 
-Parse_RT_Results = function(rt_results) {
-  # extract r0 estimate values into dataframe
-  result_df = data.frame('Rt' = rt_results[['R']]) %>%
-    mutate(Date = as.Date(row.names(.))) %>%
-    as.data.frame(row.names = 1:nrow(.)) %>%
-    mutate(lower = rt_results[['conf.int']][['lower']]) %>%
-    mutate(upper = rt_results[['conf.int']][['upper']]) %>%
-    rowwise() %>%
-    mutate(across(c(Rt, lower, upper), ~ifelse(Rt == 0, NA, .))) %>%
-    ungroup() %>%
-    select(Date, Rt, lower, upper)
+Parse_RT_Results = function(level, rt_results_raw) {
+  rt_results_level = rt_results_raw[[level]]
+  case_df = rt_prep_df %>% filter(Level == level)
+
+  if (all(is.na(rt_results_level))) {
+    message(glue('{level}: Rt generation error (despite sufficient cases)'))
+
+    result_df = data.frame(Date      = as.Date(case_df$Date),
+                           Level = level,
+                           Rt        = rep(NA, length(case_df$Date)),
+                           lower     = rep(NA, length(case_df$Date)),
+                           upper     = rep(NA, length(case_df$Date)),
+                           case_avg  = NA,
+                           threshold = NA)
+
+  } else {
+    rt_results = rt_results_level$estimates$TD
+
+    # extract r0 estimate values into dataframe
+    result_df = data.frame('Rt' = rt_results[['R']]) %>%
+      mutate(Level = level) %>%
+      mutate(Date = as.Date(row.names(.))) %>%
+      as.data.frame(row.names = 1:nrow(.)) %>%
+      mutate(lower = rt_results[['conf.int']][['lower']]) %>%
+      mutate(upper = rt_results[['conf.int']][['upper']]) %>%
+      rowwise() %>%
+      mutate(across(c(Rt, lower, upper), ~ifelse(Rt == 0, NA, .))) %>%
+      ungroup() %>%
+      select(Date, Level, Rt, lower, upper)
+  }
   return(result_df)
 }
 
-Calculate_RT = function(level, threshold) {
+Calculate_RT = function(case_df, level) {
+  message(level)
   set.seed(1)
-  gen.time = generation.time("gamma", c(3.96, 4.75))
-  pop.DSHS = population_lookup %>%
+  level_pop = population_lookup %>%
     filter(Level == level) %>%
     pull(Population_DSHS)
 
-  #change na values to 0
-  case_df = cleaned_cases_combined %>%
-    filter(Level == level) %>%
-    mutate(Cases_Daily_Imputed = ifelse(is.na(Cases_Daily_Imputed) | Cases_Daily_Imputed < 0, 0, Cases_Daily_Imputed))
-
-  # get case average from past month
-  recent_case_avg = case_df %>%
-    filter(Date > seq(max(Date), length = 2, by = "-3 weeks")[2]) %>%
-    summarize(case_avg = mean(Cases_Daily_Imputed, na.rm = TRUE)) %>%
-    pull(case_avg)
-
-  message(glue("{level} three week case avg {round(recent_case_avg, 2)}"))
-
   cases_ma7 = case_df %>%
+    filter(Level == level) %>%
+    select(Date, MA_7day) %>%
+    deframe()
+
+  # TODO: add better error handling
+  # TODO: perform parsing in separate function
+  rt_raw = tryCatch(
+  {
+    result = suppressWarnings(
+      estimate.R(
+        epid     = cases_ma7,
+        GT       = GENERATION_TIME,
+        begin    = 1L,
+        end      = length(cases_ma7),
+        methods  = 'TD',
+        pop.size = level_pop,
+        nsim     = 1000
+      )
+    )
+    return(result)
+  },
+    error = function(e) {
+      return(NA)
+    }
+  )
+  return(rt_raw)
+}
+
+Prepare_RT = function(case_df) {
+  # get case average from past month
+  recent_case_avg_df = case_df %>%
+    group_by(Level) %>%
+    filter(Date > max(Date, na.rm = TRUE) - weeks(3)) %>%
+    summarize(recent_case_avg = mean(Cases_Daily_Imputed, na.rm = TRUE)) %>%
+    ungroup() %>%
+    select(Level, recent_case_avg)
+
+  case_df_final = case_df %>%
+    left_join(recent_case_avg_df, by = 'Level') %>%
+    group_by(Level) %>%
     mutate(MA_7day = rollmean(Cases_Daily_Imputed, k = 7, na.pad = TRUE, align = 'right')) %>%
     mutate(keep_row = Date >= '2020-03-15' & Cases_Daily_Imputed > 0) %>%
     mutate(keep_row = ifelse(keep_row, TRUE, NA)) %>%
     fill(keep_row, .direction = 'down') %>%
     filter(keep_row) %>%
     slice(1:max(which(Cases_Daily_Imputed > 0))) %>%
-    select(Date, MA_7day) %>%
-    deframe()
+    ungroup()
 
-  # TODO: add better error handling
-  tryCatch({
-    rt_raw = suppressWarnings(
-      estimate.R(
-        epid = cases_ma7,
-        GT = gen.time,
-        begin = 1L,
-        end = length(cases_ma7),
-        methods = c("TD"),
-        pop.size = pop.DSHS,
-        nsim = 1000
-      )
-    )
-
-    rt_df = Parse_RT_Results(rt_raw$estimates$TD) %>%
-      mutate(case_avg = recent_case_avg) %>%
-      mutate(threshold = ifelse(recent_case_avg > case_quant, 'Above', 'Below'))
-
-    return(rt_df)
-  },
-    error = function(e) {
-      writeLines(paste0('Rt generation error (despite sufficient cases)', '\n'))
-      rt_failure_df = data.frame(Date = as.Date(case_df$Date),
-                                 Rt = rep(NA, length(case_df$Date)),
-                                 lower = rep(NA, length(case_df$Date)),
-                                 upper = rep(NA, length(case_df$Date)),
-                                 case_avg = NA,
-                                 threshold = NA)
-      return(rt_failure_df)
-    })
+  return(case_df_final)
 }
 
+# setup --------------------------------------------------------------------------------------------
+## params
+# --------------------------------------------------------------------------------------------
 
 # Obtain dfs for analysis
-county_raw = dbGetQuery(
+county_raw      = dbGetQuery(
   conn_prod,
   "
   select Date, County, Cases_Daily_Imputed from main.county
@@ -151,7 +172,9 @@ case_levels = c('County', 'TSA', 'PHR', 'Metro', 'State')
 
 cleaned_cases_combined = map(case_levels, ~Clean_Data(county, .)) %>%
   rbindlist(., fill = TRUE) %>%
-  relocate(Level_Type, .before = 'Level')
+  relocate(Level_Type, .before = 'Level') %>%
+  mutate(Cases_Daily_Imputed = ifelse(is.na(Cases_Daily_Imputed) | Cases_Daily_Imputed < 0, 0,
+                                      Cases_Daily_Imputed))
 
 population_lookup = cleaned_cases_combined %>%
   select(Level, Population_DSHS) %>%
@@ -166,9 +189,14 @@ case_quant = cleaned_cases_combined %>%
   summarize(case_quant = quantile(mean_cases, c(0.4, 0.5, 0.6, 0.7, 0.8), na.rm = TRUE)[4]) %>%
   pull(case_quant)
 
+
+# perform initial rt preperation to minimize parallelized workload
+rt_prep_df = Prepare_RT(cleaned_cases_combined)
+
+
 # Generate Rt estimates for each county, using 70% quantile of cases in past 3 weeks as threshold
 start_time = Sys.time()
-df_levels = unique(cleaned_cases_combined$Level)
+df_levels  = unique(cleaned_cases_combined$Level)
 # df_levels = 'Harris'
 
 
@@ -185,93 +213,116 @@ message(glue('Running RT on {length(df_levels)} levels using {N_CORES} cores'))
 #                                              threshold = case_quant)
 #         )
 
-
+# rt --------------------------------------------------------------------------------------------
 # TODO: figure this out
-library(snow)
-library(parallel)
-start_time = Sys.time()
-df_levels = df_levels[1:24]
-cl = makeCluster(12, type = "SOCK")
-clusterExport(cl, list("Calculate_RT", "Parse_RT_Results", "population_lookup", "cleaned_cases_combined"), envir = environment())
-clusterEvalQ(cl, c(library(R0),
-                   library(dplyr),
-                   library(tibble),
-                   library(glue),
-                   library(tidyr),
-                   library(zoo)
+# library(snow)
+# library(parallel)
+# start_time = Sys.time()
+# df_levels = df_levels[1:24]
+# cl = makeCluster(12, type = "SOCK")
+# clusterExport(cl, list("Calculate_RT", "Parse_RT_Results", "population_lookup",
+# "cleaned_cases_combined"), envir = environment())
+# clusterEvalQ(cl, c(library(R0),
+#                    library(dplyr),
+#                    library(tibble),
+#                    library(glue),
+#                    library(tidyr),
+#                    library(zoo)
+# )
+# )
+#
+# rt_output = clusterMap(cl = cl,
+#                        fun = function(x) Calculate_RT(level = x,
+#                                                       threshold = case_quant),
+#                        df_levels
+# )
+# stopCluster(cl)
+# run_time = Sys.time() - start_time
+# # 10 secs with 2 workers for 5 levels
+# avg_per_level = run_time / length(df_levels)
+# message(glue('RT calculated for {length(df_levels)} [AVG CALCULATION TIME: {round
+# (avg_per_level, 2)}] seconds / level'))
+df_levels = c(df_levels[1:5], 'Harris')
+rt_output = map(df_levels, ~Calculate_RT(case_df = rt_prep_df,
+                                         level   = .
 )
 )
+names(rt_output) = df_levels
 
-rt_output = clusterMap(cl = cl,
-                       fun = function(x) Calculate_RT(level = x,
-                                                      threshold = case_quant),
-                       df_levels
-)
-stopCluster(cl)
-run_time = Sys.time() - start_time
-# 10 secs with 2 workers for 5 levels
-avg_per_level = run_time / length(df_levels)
-message(glue('RT calculated for {length(df_levels)} [AVG CALCULATION TIME: {round(avg_per_level, 2)}] seconds / level'))
 
-rt_combined = rt_output %>%
-  rbindlist(., fill = TRUE)
+rt_parsed = map(names(rt_output), ~Parse_RT_Results(., rt_output))
+
+rt_combined = rt_parsed %>%
+  rbindlist(., fill = TRUE) %>%
+  left_join(rt_prep_df %>% select(Level, recent_case_avg) %>% distinct(),
+            by = 'Level'
+  ) %>%
+  mutate(threshold = ifelse(recent_case_avg > case_quant, 'Above', 'Below'))
 
 # remove errors
-min_date = seq(max(RT_County_df_all$Date), length = 2, by = "-3 weeks")[2]
-error_counties = RT_County_df_all %>%
-  group_by(County) %>%
-  mutate(CI_error = factor(ifelse(lower == 0 & upper == 0, 1, 0))) %>%
-  mutate(Rt_error = factor(ifelse(is.na(Rt) | Rt == 0 | Rt > 10, 1, 0))) %>%
+error_levels = rt_combined %>%
+  mutate(min_date = max(Date) - weeks(3)) %>%
   filter(Date > min_date & Date != max(Date)) %>%
-  filter(is.na(CI_error) | CI_error == 1 | Rt_error == 1) %>%
-  select(County) %>%
-  distinct() %>%
-  unlist()
+  group_by(Level) %>%
+  mutate(CI_error = lower == 0 & upper == 0) %>%
+  mutate(Rt_error = is.na(Rt) | Rt == 0 | Rt > 10) %>%
+  ungroup() %>%
+  filter(is.na(CI_error) | CI_error | Rt_error) %>%
+  pull(Level) %>%
+  unique()
 
+error_levels_pct = length(error_levels) / length(df_levels)
 
-RT_County_df = RT_County_df_all %>%
-  mutate(Rt = ifelse(County %in% error_counties, NA, Rt)) %>%
-  mutate(lower = ifelse(County %in% error_counties, NA, lower)) %>%
-  mutate(upper = ifelse(County %in% error_counties, NA, upper))
-good_counties = RT_County_df$County %>% unique() %>% length()
-good_counties / 254 # = 0.744
+rt_combined_clean = rt_combined %>%
+  mutate(across(c(Rt, lower, upper), ~ifelse(Level %in% error_levels, NA, .))) %>%
+  left_join(cleaned_cases_combined %>% select(Level, Level_Type) %>% distinct(), by = 'Level')
 
+message(glue('missing rt for n={length(error_levels)} [{round(error_levels_pct * 100, 2)}%]'))
 
+# write TPR update
+# --------------------------------------------------------------------------------------------
 # TPR_df = read.csv('tableau/county_TPR.csv') %>%
-TPR_df = dbGetQuery(conn_prod, "select * from main.county_TPR")
+TPR_df = dbGetQuery(conn_prod, "select * from main.county_TPR") %>%
 select(-contains('Rt')) %>%
   mutate(Date = as.Date(Date))
 
-cms_dates = list.files('C:/Users/jeffb/Desktop/Life/personal-projects/COVID/original-sources/historical/cms_tpr') %>%
-  gsub('TPR_', '', .) %>%
-  gsub('.csv', '', .) %>%
-  as.Date()
+# cms_dates = list.files('C:/Users/jeffb/Desktop/Life/personal-projects/COVID/original-sources
+# /historical/cms_tpr') %>%
+#   gsub('TPR_', '', .) %>%
+#   gsub('.csv', '', .) %>%
+#   as.Date()
+# TODO: update this with actual values
+cms_dates = unique(TPR_df$Date)
 
+MIN_TEST_DATE  = as.Date('2020-09-09')
 cms_TPR_padded =
   TPR_df %>%
     filter(Date %in% cms_dates) %>%
-    left_join(., RT_County_df[, c('County', 'Date', 'Rt')], by = c('County', 'Date')) %>%
-    group_by(County) %>%
     arrange(County, Date) %>%
+    left_join(rt_combined_clean %>%
+                filter(Level_Type == 'County') %>%
+                select(Level, Date, Rt),
+              by = c('County' = 'Level', 'Date')) %>%
+    group_by(County) %>%
     tidyr::fill(TPR, .direction = 'up') %>%
     tidyr::fill(Tests, .direction = 'up') %>%
     tidyr::fill(Rt, .direction = 'up') %>%
-    arrange(County, Date) %>%
     ungroup() %>%
-    mutate(Tests = ifelse(Date < as.Date('2020-09-09'), NA, Tests))
-
-
-cpr_TPR = TPR_df %>%
-  filter(!(Date %in% cms_dates)) %>%
-  left_join(., RT_County_df[, c('County', 'Date', 'Rt')], by = c('County', 'Date'))
+    mutate(Tests = ifelse(Date < MIN_TEST_DATE, NA, Tests))
 
 county_TPR = cms_TPR_padded %>%
-  rbind(cpr_TPR) %>%
-  arrange(County, Date)
-county_TPR_sd = cms_TPR_padded %>%
-  rbind(cpr_TPR) %>%
   arrange(County, Date)
 
-dbWriteTable(conn_prod, 'main.county_TPR', cpr_TPR)
-dbWriteTable(conn_prod, 'main.stacked_rt', RT_Combined_df, overwrite = TRUE)
+# final table organization --------------------------------------------------------------------------------------------
+rt_final = rt_combined_clean %>%
+  relocate(Level_Type, .before = 'Level')
+
+
+# diagnostics
+# -------------------------------------------------------------------------------------------
+# TODO: add
+# upload
+# --------------------------------------------------------------------------------------------
+dbWriteTable(conn_prod, 'main.county_TPR', county_TPR)
+dbWriteTable(conn_prod, 'main.stacked_rt', rt_final, overwrite = TRUE)
 
