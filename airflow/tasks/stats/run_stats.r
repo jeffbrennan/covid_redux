@@ -27,31 +27,71 @@ conn_stage = dbConnect(SQLite(), 'db/staging.db')
 N_CORES    = availableCores() / 2
 GENERATION_TIME = generation.time("gamma", c(3.96, 4.75))
 
-# functions -----
-Clean_Data = function(df, level_type) {
-  if (level_type == 'State') {
-    clean_df = df %>%
-      select(Date, Cases_Daily_Imputed, Population_DSHS) %>%
-      group_by(Date) %>%
-      summarize(across(c(Cases_Daily_Imputed, Population_DSHS), ~sum(., na.rm = TRUE))) %>%
-      ungroup() %>%
-      mutate(Date = as.Date(Date)) %>%
-      arrange(Date) %>%
-      mutate(Level_Type = level_type) %>%
-      mutate(Level = 'Texas')
+# functions --------------------------------------------------------------------------------------------
+Format_Output = function(parsed_rt, error_levels, job_id) {
+  rt_combined_clean = parsed_rt %>%
+    mutate(across(c(Rt, lower, upper), ~ifelse(Level %in% error_levels, NA, .))) %>%
+    left_join(cleaned_cases_combined %>%
+                select(Level, Level_Type) %>%
+                distinct(), by = 'Level') %>%
+    select(Date, Level_Type, Level, Rt, lower, upper) %>%
+    mutate(JOB_ID = job_id)
 
-  } else {
-    clean_df = df %>%
-      select(Date, !!as.name(level_type), Cases_Daily_Imputed, Population_DSHS) %>%
-      group_by(Date, !!as.name(level_type)) %>%
-      summarize(across(c(Cases_Daily_Imputed, Population_DSHS), ~sum(., na.rm = TRUE))) %>%
-      ungroup() %>%
-      mutate(Date = as.Date(Date)) %>%
-      arrange(Date, !!as.name(level_type)) %>%
-      mutate(Level_Type = level_type) %>%
-      rename(Level = !!as.name(level_type))
-  }
-  return(clean_df %>% ungroup())
+  return(rt_combined_clean)
+}
+
+RT_Diagnostics_Checks = function(parsed_rt) {
+  check_no_dupe = parsed_rt %>%
+    group_by(Date, Level) %>%
+    filter(n() > 1) %>%
+    nrow() == 0
+
+  checks = all(list(check_no_dupe))
+}
+
+RT_Diagnostics = function(parsed_rt) {
+  runtime           = rt_end_time - rt_start_time
+  runtime_per_level = runtime / length(df_levels)
+
+  error_levels = parsed_rt %>%
+    mutate(min_date = max(Date) - weeks(3)) %>%
+    filter(Date > min_date & Date != max(Date)) %>%
+    group_by(Level) %>%
+    mutate(CI_error = lower == 0 & upper == 0) %>%
+    mutate(Rt_error = is.na(Rt) | Rt == 0 | Rt > 10) %>%
+    ungroup() %>%
+    filter(is.na(CI_error) | CI_error | Rt_error) %>%
+    pull(Level) %>%
+    unique()
+
+  error_levels_pct = length(error_levels) / length(df_levels)
+  job_result       = RT_Diagnostics_Checks(parsed_rt)
+  job_id           = Generate_Job_ID(CURRENT_JOB_ID)
+
+  diagnostic_df = data.frame(JOB_ID = job_id) %>%
+    mutate(JOB_TYPE = 'rt_estimation') %>%
+    mutate(JOB_RESULT = job_result) %>%
+    mutate(error_levels      = length(error_levels),
+           error_levels_pct  = error_levels_pct,
+           runtime           = runtime,
+           runtime_per_level = runtime_per_level,
+           time_completed    = Sys.time(),
+           case_quantile_70  = case_quant,
+    )
+  output        = list(
+    'df'           = diagnostic_df,
+    'error_levels' = error_levels,
+    'success'      = job_result,
+    'job_id'       = job_id
+  )
+}
+
+Generate_Job_ID = function(current_job_id) {
+  new_job_id = current_job_id %>%
+    sum(., 1) %>%
+    str_pad(width = 5, pad = '0', side = 'left')
+
+  return(new_job_id)
 }
 
 Parse_RT_Results = function(level, rt_results_raw) {
@@ -165,6 +205,8 @@ county_metadata = dbGetQuery(
   "
 )
 
+CURRENT_JOB_ID = dbGetQuery(conn_prod, 'select max(cast(job_id as int)) from main.stacked_rt')
+# transformations --------------------------------------------------------------------------------------------
 county = county_raw %>%
   left_join(county_metadata, by = 'County') %>%
   mutate(Date = as.Date(Date)) %>%
@@ -215,13 +257,17 @@ plan(sequential)
 rt_parsed = map(names(rt_output), ~Parse_RT_Results(., rt_output)) %>%
   rbindlist(fill = TRUE)
 
-error_levels_pct = length(error_levels) / length(df_levels)
+diagnostic_results = RT_Diagnostics(parsed_rt = rt_parsed)
+stopifnot(diagnostic_results$success)
 
-rt_combined_clean = rt_combined %>%
-  mutate(across(c(Rt, lower, upper), ~ifelse(Level %in% error_levels, NA, .))) %>%
-  left_join(cleaned_cases_combined %>% select(Level, Level_Type) %>% distinct(), by = 'Level')
+rt_final = Format_Output(parsed_rt    = rt_parsed,
+                         error_levels = diagnostic_results$error_levels,
+                         job_id       = diagnostic_results$job_id)
 
-message(glue('missing rt for n={length(error_levels)} [{round(error_levels_pct * 100, 2)}%]'))
+# upload  --------------------------------------------------------------------------------------------
+dbWriteTable(conn_prod, DBI::SQL('stats_diagnostics'), diagnostic_results$df, append = TRUE)
+dbWriteTable(conn_prod, DBI::SQL('main.stacked_rt'), rt_final, overwrite = TRUE)
+
 
 # write TPR update
 # --------------------------------------------------------------------------------------------
