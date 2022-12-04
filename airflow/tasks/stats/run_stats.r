@@ -56,7 +56,7 @@ Clean_Data = function(df, level_type) {
 
 Parse_RT_Results = function(level, rt_results_raw) {
   rt_results_level = rt_results_raw[[level]]
-  case_df = rt_prep_df %>% filter(Level == level)
+  case_df          = rt_prep_df[[level]]
 
   if (all(is.na(rt_results_level))) {
     message(glue('{level}: Rt generation error (despite sufficient cases)'))
@@ -211,27 +211,9 @@ rt_output = future_map(rt_prep_df,
 rt_end_time = Sys.time()
 plan(sequential)
 
-
-rt_parsed = map(names(rt_output), ~Parse_RT_Results(., rt_output))
-
-rt_combined = rt_parsed %>%
-  rbindlist(., fill = TRUE) %>%
-  left_join(rt_prep_df %>% select(Level, recent_case_avg) %>% distinct(),
-            by = 'Level'
-  ) %>%
-  mutate(threshold = ifelse(recent_case_avg > case_quant, 'Above', 'Below'))
-
-# remove errors
-error_levels = rt_combined %>%
-  mutate(min_date = max(Date) - weeks(3)) %>%
-  filter(Date > min_date & Date != max(Date)) %>%
-  group_by(Level) %>%
-  mutate(CI_error = lower == 0 & upper == 0) %>%
-  mutate(Rt_error = is.na(Rt) | Rt == 0 | Rt > 10) %>%
-  ungroup() %>%
-  filter(is.na(CI_error) | CI_error | Rt_error) %>%
-  pull(Level) %>%
-  unique()
+# formatting --------------------------------------------------------------------------------------------
+rt_parsed = map(names(rt_output), ~Parse_RT_Results(., rt_output)) %>%
+  rbindlist(fill = TRUE)
 
 error_levels_pct = length(error_levels) / length(df_levels)
 
