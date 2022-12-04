@@ -8,7 +8,7 @@ library(RSQLite)      # database
 library(furrr) # parallel processing
 
 # Modeling & stats
-library(mgcv)       # gam
+library(mgcv)        # gam
 library(R0)         # rt
 library(Kendall)    # Mann-Kendall
 library(zoo) # Time series & forecasting
@@ -24,6 +24,7 @@ GENERATION_TIME = generation.time("gamma", c(3.96, 4.75))
 Format_Output = function(parsed_rt, error_levels, job_id) {
   rt_combined_clean = parsed_rt %>%
     mutate(across(c(Rt, lower, upper), ~ifelse(Level %in% error_levels, NA, .))) %>%
+    mutate(Date = as.character(Date)) %>%
     left_join(cleaned_cases_combined %>%
                 select(Level, Level_Type) %>%
                 distinct(), by = 'Level') %>%
@@ -286,7 +287,6 @@ rt_final = Format_Output(parsed_rt    = rt_parsed,
 # upload  --------------------------------------------------------------------------------------------
 dbWriteTable(conn_prod, DBI::SQL('stats_diagnostics'), diagnostic_results$df, append = TRUE)
 dbWriteTable(conn_prod, DBI::SQL('main.stacked_rt'), rt_final, overwrite = TRUE)
-
 
 # write TPR update
 # --------------------------------------------------------------------------------------------
