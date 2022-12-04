@@ -87,15 +87,15 @@ Parse_RT_Results = function(level, rt_results_raw) {
   return(result_df)
 }
 
-Calculate_RT = function(case_df, level) {
-  message(level)
+Calculate_RT = function(case_df) {
+  # message(level)
   set.seed(1)
+  level     = case_df$Level[1]
   level_pop = population_lookup %>%
     filter(Level == level) %>%
     pull(Population_DSHS)
 
   cases_ma7 = case_df %>%
-    filter(Level == level) %>%
     select(Date, MA_7day) %>%
     deframe()
 
@@ -141,8 +141,10 @@ Prepare_RT = function(case_df) {
     fill(keep_row, .direction = 'down') %>%
     filter(keep_row) %>%
     slice(1:max(which(Cases_Daily_Imputed > 0))) %>%
-    ungroup()
-
+    ungroup() %>%
+    select(Date, Level, MA_7day, Population_DSHS) %>%
+    group_split(Level) %>%
+    set_names(map_chr(., ~.x$Level[1]))
   return(case_df_final)
 }
 
@@ -193,61 +195,21 @@ case_quant = cleaned_cases_combined %>%
 # perform initial rt preperation to minimize parallelized workload
 rt_prep_df = Prepare_RT(cleaned_cases_combined)
 
-
+# rt loop --------------------------------------------------------------------------------------------
 # Generate Rt estimates for each county, using 70% quantile of cases in past 3 weeks as threshold
 start_time = Sys.time()
-df_levels  = unique(cleaned_cases_combined$Level)
-# df_levels = 'Harris'
-
-
 message(glue('Running RT on {length(df_levels)} levels using {N_CORES} cores'))
-# plan(multisession, gc = TRUE)
-# rt_output = furrr::future_map(df_levels[1:20],
-#                                ~Calculate_RT(case_df = cleaned_cases_combined,
-#                                              level = .,
-#                                              threshold = case_quant),
-#                                .options = furrr_options(seed = TRUE)
-# )
-# rt_output = map(df_levels[1:20],  ~Calculate_RT(case_df = cleaned_cases_combined,
-#                                              level = .,
-#                                              threshold = case_quant)
-#         )
+rt_start_time = Sys.time()
+plan(multisession, workers = N_CORES, gc = TRUE)
 
-# rt --------------------------------------------------------------------------------------------
-# TODO: figure this out
-# library(snow)
-# library(parallel)
-# start_time = Sys.time()
-# df_levels = df_levels[1:24]
-# cl = makeCluster(12, type = "SOCK")
-# clusterExport(cl, list("Calculate_RT", "Parse_RT_Results", "population_lookup",
-# "cleaned_cases_combined"), envir = environment())
-# clusterEvalQ(cl, c(library(R0),
-#                    library(dplyr),
-#                    library(tibble),
-#                    library(glue),
-#                    library(tidyr),
-#                    library(zoo)
-# )
-# )
-#
-# rt_output = clusterMap(cl = cl,
-#                        fun = function(x) Calculate_RT(level = x,
-#                                                       threshold = case_quant),
-#                        df_levels
-# )
-# stopCluster(cl)
-# run_time = Sys.time() - start_time
-# # 10 secs with 2 workers for 5 levels
-# avg_per_level = run_time / length(df_levels)
-# message(glue('RT calculated for {length(df_levels)} [AVG CALCULATION TIME: {round
-# (avg_per_level, 2)}] seconds / level'))
-df_levels = c(df_levels[1:5], 'Harris')
-rt_output = map(df_levels, ~Calculate_RT(case_df = rt_prep_df,
-                                         level   = .
+rt_output = future_map(rt_prep_df,
+                       ~Calculate_RT(case_df = .),
+                       .options  = furrr_options(seed       = TRUE,
+                                                 scheduling = Inf),
+                       .progress = TRUE
 )
-)
-names(rt_output) = df_levels
+rt_end_time = Sys.time()
+plan(sequential)
 
 
 rt_parsed = map(names(rt_output), ~Parse_RT_Results(., rt_output))
