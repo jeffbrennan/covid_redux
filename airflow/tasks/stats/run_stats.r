@@ -1,30 +1,23 @@
-#region libraries -----
+# libraries --------------------------------------------------------------------------------------------
+# general
 library(tidyverse)
 library(lubridate)
 library(glue)
-library(reshape2)
-library(nlme)        # gapply
 library(data.table)
+library(RSQLite)      # database
+library(furrr) # parallel processing
 
 # Modeling & stats
 library(mgcv)       # gam
 library(R0)         # rt
 library(Kendall)    # Mann-Kendall
-
-# parallel processing
-library(furrr)
-
-# Time series & forecasting
-library(zoo)
-
-# database
-library(RSQLite)
+library(zoo) # Time series & forecasting
 
 
-select     = dplyr::select
-conn_prod  = dbConnect(SQLite(), 'db/prod.db')
-conn_stage = dbConnect(SQLite(), 'db/staging.db')
-N_CORES    = availableCores() / 2
+select          = dplyr::select
+conn_prod       = dbConnect(SQLite(), 'db/prod.db')
+conn_stage      = dbConnect(SQLite(), 'db/staging.db')
+N_CORES         = availableCores()
 GENERATION_TIME = generation.time("gamma", c(3.96, 4.75))
 
 # functions --------------------------------------------------------------------------------------------
@@ -99,10 +92,10 @@ Parse_RT_Results = function(level, rt_results_raw) {
   case_df          = rt_prep_df[[level]]
 
   if (all(is.na(rt_results_level))) {
-    message(glue('{level}: Rt generation error (despite sufficient cases)'))
+    # message(glue('{level}: Rt generation error (despite sufficient cases)'))
 
     result_df = data.frame(Date      = as.Date(case_df$Date),
-                           Level = level,
+                           Level     = level,
                            Rt        = rep(NA, length(case_df$Date)),
                            lower     = rep(NA, length(case_df$Date)),
                            upper     = rep(NA, length(case_df$Date)),
@@ -140,7 +133,6 @@ Calculate_RT = function(case_df) {
     deframe()
 
   # TODO: add better error handling
-  # TODO: perform parsing in separate function
   rt_raw = tryCatch(
   {
     result = suppressWarnings(
@@ -188,20 +180,46 @@ Prepare_RT = function(case_df) {
   return(case_df_final)
 }
 
-# setup --------------------------------------------------------------------------------------------
-## params
-# --------------------------------------------------------------------------------------------
+Clean_Data = function(df, level_type) {
+  if (level_type == 'State') {
+    clean_df = df %>%
+      select(Date, Cases_Daily_Imputed, Population_DSHS) %>%
+      group_by(Date) %>%
+      summarize(across(c(Cases_Daily_Imputed, Population_DSHS), ~sum(., na.rm = TRUE))) %>%
+      ungroup() %>%
+      mutate(Date = as.Date(Date)) %>%
+      arrange(Date) %>%
+      mutate(Level_Type = level_type) %>%
+      mutate(Level = 'Texas')
 
-# Obtain dfs for analysis
+  } else {
+    clean_df = df %>%
+      select(Date, !!as.name(level_type), Cases_Daily_Imputed, Population_DSHS) %>%
+      group_by(Date, !!as.name(level_type)) %>%
+      summarize(across(c(Cases_Daily_Imputed, Population_DSHS), ~sum(., na.rm = TRUE))) %>%
+      ungroup() %>%
+      mutate(Date = as.Date(Date)) %>%
+      arrange(Date, !!as.name(level_type)) %>%
+      mutate(Level_Type = level_type) %>%
+      rename(Level = !!as.name(level_type))
+  }
+  return(clean_df %>% ungroup())
+}
+
+# setup --------------------------------------------------------------------------------------------
+# db calls --------------------------------------------------------------------------------------------
 county_raw      = dbGetQuery(
   conn_prod,
   "
-  select Date, County, Cases_Daily_Imputed from main.county
+  select Date, County, Cases_Daily_Imputed
+  from main.county
   ")
+
 county_metadata = dbGetQuery(
   conn_stage,
   "
-  select * from county_names
+  select *
+  from main.county_names
   "
 )
 
@@ -233,6 +251,7 @@ case_quant = cleaned_cases_combined %>%
   summarize(case_quant = quantile(mean_cases, c(0.4, 0.5, 0.6, 0.7, 0.8), na.rm = TRUE)[4]) %>%
   pull(case_quant)
 
+df_levels  = unique(cleaned_cases_combined$Level)
 
 # perform initial rt preperation to minimize parallelized workload
 rt_prep_df = Prepare_RT(cleaned_cases_combined)
@@ -273,7 +292,7 @@ dbWriteTable(conn_prod, DBI::SQL('main.stacked_rt'), rt_final, overwrite = TRUE)
 # --------------------------------------------------------------------------------------------
 # TPR_df = read.csv('tableau/county_TPR.csv') %>%
 TPR_df = dbGetQuery(conn_prod, "select * from main.county_TPR") %>%
-select(-contains('Rt')) %>%
+  select(-contains('Rt')) %>%
   mutate(Date = as.Date(Date))
 
 # cms_dates = list.files('C:/Users/jeffb/Desktop/Life/personal-projects/COVID/original-sources
@@ -303,16 +322,7 @@ cms_TPR_padded =
 county_TPR = cms_TPR_padded %>%
   arrange(County, Date)
 
-# final table organization --------------------------------------------------------------------------------------------
-rt_final = rt_combined_clean %>%
-  relocate(Level_Type, .before = 'Level')
-
-
-# diagnostics
-# -------------------------------------------------------------------------------------------
-# TODO: add
 # upload
 # --------------------------------------------------------------------------------------------
 dbWriteTable(conn_prod, 'main.county_TPR', county_TPR)
-dbWriteTable(conn_prod, 'main.stacked_rt', rt_final, overwrite = TRUE)
 
