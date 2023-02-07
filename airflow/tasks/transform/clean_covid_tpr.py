@@ -73,6 +73,7 @@ def clean_data(raw_file):
     final_df = (renamed_df[~renamed_df['County'].str.lower().str.contains(bad_county_values)]
                 .assign(County=lambda x: x['County'].str.replace(' County, TX', ''))
                 .assign(Date=lambda x: pd.to_datetime(x['Date']))
+                .assign(Last_Updated=lambda x: pd.to_datetime(x['Last_Updated']))
                 )
 
     final_df = final_df.astype(
@@ -94,7 +95,7 @@ def clean_data(raw_file):
 
 
 def write_to_prod(df):
-    df.to_sql('county_tpr', con=conn_prod, if_exists='append')
+    df.to_sql('county_tpr', con=conn_prod, if_exists='append', index=False)
 
 
 def check_diagnostic_results(gx_results):
@@ -110,7 +111,7 @@ clean_tpr_results = clean_data(raw_tpr)
 
 final_diagnostic_results = run_diagnostics(clean_tpr_results['df'])
 
-if final_diagnostic_results['result'] == 'success':
-    write_to_prod(clean_tpr_results[['df']])
+if final_diagnostic_results.success:
+    write_to_prod(clean_tpr_results['df'])
 else:
     print('ERROR: CHECK DATA DOCS')
