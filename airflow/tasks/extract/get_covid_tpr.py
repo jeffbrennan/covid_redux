@@ -18,16 +18,19 @@ def write_extracted_data(extracted_data):
 
 
 def extract_tpr_data(new_file_result):
+    test_col_substrings = ['test', 'naat']
+    out_columns = ['County', 'Date']
+    metadata_columns = ['LAST_UPDATED']
     new_file_path = new_file_result['file_path']
 
     assert 'Counties' in pd.ExcelFile(new_file_path).sheet_names
     current_tpr_file = pd.read_excel(new_file_path, sheet_name='Counties', skiprows=1)
 
-    test_col_substrings = ['test', 'naat']
     tpr_all_cols = current_tpr_file.columns.tolist()
-    out_columns = ['County', 'Date']
     test_columns = [i for i in tpr_all_cols if any(x in i.lower() for x in test_col_substrings)]
+
     out_columns.extend(test_columns)
+    out_columns.extend(metadata_columns)
 
     # minimal cleaning to load into db
     extracted_tpr_df = (
@@ -82,6 +85,8 @@ def get_tpr_file_url():
     output = {'file_path': tpr_url_newest, 'last_updated': tpr_path_parsed_date}
 
     return output
+
+
 # endregion
 
 # globals
