@@ -4,44 +4,9 @@ from datetime import datetime as dt
 from datetime import timedelta
 import sqlite3
 
-prod_conn = sqlite3.connect('db/prod.db')
-stage_conn = sqlite3.connect('db/staging.db')
+
 # data updates at ~ 5PM EST
 # if running after midnight (4 UTC) or before noon (16 UTC), subtract 1 day
-# endregion
-def clean_county_vitals():
-    # setup
-    vitals_raw = pd.read_sql("select * from main.vitals", con=stage_conn)
-    county_names = pd.read_sql("select * from main.county_names", con=stage_conn)
-
-    # assert 1 row = 1 county
-    all_counties = county_names['County'].to_list()
-    vitals_clean = vitals_raw[vitals_raw['County'].isin(all_counties)]
-
-    # rename cols
-    vitals_clean.rename({'Confirmed Cases': 'Cases_Cumulative',
-                         'Fatalities': 'Fatalities_Cumulative'},
-                        axis=1,
-                        inplace=True
-                        )
-
-    # apply diagnostic checks
-    check_nrow = vitals_clean.shape[0] == len(all_counties)
-    check_colnames = vitals_clean.columns
-    checks = [check_nrow, check_colnames]
-
-    assert all(checks)
-
-    # TODO: split into new function
-    # compute daily cases
-    existing_vitals = pd.read_sql('''select * 
-                                     from main.county
-                                     where date = (
-                                        select max(date) from main.county
-                                        )
-                                  ''', con=prod_conn)
-
-
 def get_county_vitals(county_url, county_sheetnames):
     vitals_sheetname = [s for s in county_sheetnames if "Case" in s and str(TODAY.year) in s]
     vitals_raw = pd.read_excel(county_url, vitals_sheetname)[vitals_sheetname[0]]
@@ -72,13 +37,14 @@ def get_county_data():
     return output
 
 
-def write_db(raw_data_dict, conn=stage_con):
+def write_db(named_df, conn=stage_conn):
     # TODO: add name validation
-    for key, value in raw_data_dict.items():
+    for key, value in named_df.items():
         value.to_sql(f'{key}', conn, if_exists='replace', index=False)
 
 
+prod_conn = sqlite3.connect('db/prod.db')
+stage_conn = sqlite3.connect('db/staging.db')
+TODAY = dt.today()
+
 get_county_data()
-get_county_vitals()
-clean_county_vitals()
-write_db()
