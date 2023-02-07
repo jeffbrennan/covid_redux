@@ -34,6 +34,7 @@ def extract_tpr_data(new_file_result):
         current_tpr_file
         .query("`State Abbreviation` == 'TX'")
         .assign(Date=new_file_result['last_updated'])
+        .assign(LAST_UPDATED=dt.today())
         [out_columns]
     )
     return extracted_tpr_df
