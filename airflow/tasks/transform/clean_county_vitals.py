@@ -1,46 +1,147 @@
+# region imports -----
+import time
 import pandas as pd
-import re
 from datetime import datetime as dt
-from datetime import timedelta
 import sqlite3
+import great_expectations as gx
+from great_expectations.core.batch import RuntimeBatchRequest
 
 
-def clean_county_vitals():
-    # setup
-    vitals_raw = pd.read_sql("select * from main.vitals", con=stage_conn)
-    county_names = pd.read_sql("select * from main.county_names", con=stage_conn)
+# endregion
 
-    # assert 1 row = 1 county
-    all_counties = county_names['County'].to_list()
-    vitals_clean = vitals_raw[vitals_raw['County'].isin(all_counties)]
 
-    # rename cols
-    vitals_clean.rename({'Confirmed Cases': 'Cases_Cumulative',
-                         'Fatalities': 'Fatalities_Cumulative'},
-                        axis=1,
-                        inplace=True
-                        )
+def update_tbl_metadata(tbl_name, tbl_max_date):
+    metadata_insert_query = f"""
+        INSERT OR IGNORE INTO
+        TBL_METADATA (TABLE_NAME, LAST_UPDATED, MAX_DATE, EXPECTED_REFRESH_DAYS)
+        VALUES(
+                '{tbl_name}',
+                '{TODAY}',
+                '{tbl_max_date}', 
+                '7'
+              );
+        """
 
-    # apply diagnostic checks
-    check_nrow = vitals_clean.shape[0] == len(all_counties)
-    check_colnames = vitals_clean.columns
-    checks = [check_nrow, check_colnames]
+    metadata_update_query = f"""
+        UPDATE TBL_METADATA 
+        SET 
+            LAST_UPDATED = '{TODAY}',
+            MAX_DATE = '{tbl_max_date}'
+        WHERE TABLE_NAME = '{tbl_name}'
+        """
+    conn_prod.execute(metadata_insert_query)
+    conn_prod.commit()
 
-    assert all(checks)
+    conn_prod.execute(metadata_update_query)
+    conn_prod.commit()
 
-    # TODO: split into new function
-    # compute daily cases
-    existing_vitals = pd.read_sql(
-        '''
-        select * 
-        from main.county
-        where date = (
-                        select max(date) from main.county
-                     )
-        ''',
-        con=prod_conn
+
+def write_to_prod(df, tbl_name):
+    df.to_sql(tbl_name, con=conn_prod, if_exists='append', index=False)
+
+    tbl_max_date = max(df['Date'])
+    update_tbl_metadata(tbl_name, tbl_max_date)
+
+
+def run_diagnostics(df):
+    context = gx.get_context()
+    df_run_date = dt.strftime(df['Date'].max(), '%Y-%m-%d')
+    run_name = f'{df_run_date}_PROD_LOAD_COUNTY_VITALS'
+
+    batch_request = RuntimeBatchRequest(
+        datasource_name="county_vitals",
+        data_connector_name="county_vitals_connector",
+        data_asset_name="COUNTY_VITALS",
+        runtime_parameters={"batch_data": df},
+        batch_identifiers={"vitals_id": ""},
     )
 
-prod_conn = sqlite3.connect('db/prod.db')
-stage_conn = sqlite3.connect('db/staging.db')
+    result = context.run_checkpoint(
+        checkpoint_name="county_vital_prod_load_check",
+        run_name=run_name,
+        validations=[
+            {"batch_request": batch_request}
+        ],
+    )
+
+    context.build_data_docs()
+    return result
+
+
+def get_existing_values():
+    existing_vitals = pd.read_sql(
+        '''
+        select
+        County,
+        Date,
+        Cases_Cumulative,
+        Deaths_Cumulative
+        from main.county_vitals
+        where date = (
+                        select max(date) from main.county_vitals
+                     )
+        ''',
+        con=conn_prod
+    )
+
+    return existing_vitals
+
+
+def clean_county_vitals(vitals_raw):
+    bad_county_values = '|'.join(['unallocated', 'unknown', '-', 'total', 'incomplete'])
+    final_cols = ['County', 'Date', 'Cases_Cumulative', 'Deaths_Cumulative']
+
+    vitals_clean = (
+        vitals_raw[~vitals_raw['County'].str.lower().str.contains(bad_county_values)]
+        .rename(
+            {
+                'Confirmed Cases': 'Cases_Cumulative',
+                'Fatalities': 'Deaths_Cumulative'
+            },
+            axis='columns'
+        )
+        [final_cols]
+    )
+
+    existing_vitals = get_existing_values()
+    vitals_combined = pd.concat([existing_vitals, vitals_clean])
+
+    # TODO: switch from cases daily calc to cases cumulative calc using daily data source
+    vitals_final = (
+        vitals_combined
+        .astype(
+            {
+                'Cases_Cumulative': 'uint32',
+                'Deaths_Cumulative': 'uint32'
+            }
+        )
+        .assign(Date=lambda x: pd.to_datetime(x['Date']))
+        .sort_values(by=['County', 'Date'])
+        .assign(Cases_Daily=lambda x: x.groupby(['County'])['Cases_Cumulative'].diff())
+        .assign(Deaths_Daily=lambda x: x.groupby(['County'])['Deaths_Cumulative'].diff())
+        .groupby('County')
+        .tail(1)
+        .assign(Cases_Daily=lambda x: x['Cases_Daily'].fillna(0))
+        .assign(Deaths_Daily=lambda x: x['Deaths_Daily'].fillna(0))
+        .astype(
+            {
+                'Cases_Daily': 'uint32',
+                'Deaths_Daily': 'uint32'
+            }
+        )
+    )
+
+    return vitals_final
+
+
+conn_prod = sqlite3.connect('db/prod.db')
+conn_stage = sqlite3.connect('db/staging.db')
 TODAY = dt.today()
+
+vitals_raw = pd.read_sql("select * from main.vitals", con=conn_stage)
+
+cleaned_vitals = clean_county_vitals(vitals_raw)
+vital_diagnostics = run_diagnostics(cleaned_vitals)
+
+if vital_diagnostics.success:
+    write_to_prod(df=cleaned_vitals, tbl_name="county_vitals")
