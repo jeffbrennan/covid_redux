@@ -15,17 +15,30 @@ config_version: 3.0
 # add a new datasource. Read more at https://docs.greatexpectations.io/docs/guides/connecting_to_your_data/connect_to_data_overview
 datasources:
   county_tpr:
-    module_name: great_expectations.datasource
-    execution_engine:
-      module_name: great_expectations.execution_engine
-      class_name: PandasExecutionEngine
     data_connectors:
       county_tpr_connector:
-        module_name: great_expectations.datasource.data_connector
         batch_identifiers:
           - tpr_identifier
+        name: county_tpr_connector
         class_name: RuntimeDataConnector
+        module_name: great_expectations.datasource.data_connector
     class_name: Datasource
+    execution_engine:
+      class_name: PandasExecutionEngine
+      module_name: great_expectations.execution_engine
+    module_name: great_expectations.datasource
+  county_vitals:
+    data_connectors:
+      county_vitals_connector:
+        batch_identifiers:
+          - vitals_id
+        class_name: RuntimeDataConnector
+        module_name: great_expectations.datasource.data_connector
+    class_name: Datasource
+    execution_engine:
+      class_name: PandasExecutionEngine
+      module_name: great_expectations.execution_engine
+    module_name: great_expectations.datasource
 config_variables_file_path: uncommitted/config_variables.yml
 
 # The plugins_directory will be added to your python path for custom modules
@@ -88,10 +101,10 @@ data_docs_sites:
       class_name: DefaultSiteIndexBuilder
 
 anonymous_usage_statistics:
-  enabled: true
   data_context_id: 28e563bd-19f9-42ba-ba99-7148d084d4a6
+  enabled: true
 notebooks:
 include_rendered_content:
+  globally: false
   expectation_validation_result: false
   expectation_suite: false
-  globally: false
