@@ -73,9 +73,8 @@ def get_existing_values():
         '''
         select
         County,
-        Date,
-        Cases_Cumulative,
-        Deaths_Cumulative
+        Cases_Daily as Cases_Daily_OLD,
+        Deaths_Daily as Deaths_Daily_OLD
         from main.county_vitals
         where date = (
                         select max(date) from main.county_vitals
@@ -89,14 +88,31 @@ def get_existing_values():
 
 def clean_county_vitals(vitals_raw):
     bad_county_values = '|'.join(['unallocated', 'unknown', '-', 'total', 'incomplete'])
-    final_cols = ['County', 'Date', 'Cases_Cumulative', 'Deaths_Cumulative']
+    final_cols = ['County', 'Date', 'Cases_Daily', 'Deaths_Daily']
+
+    # pivot values
+
+    # filter to only new values
+
+    # clean & compute
+
+    # return
+
+    # cases_pivoted = (raw_cases
+    #                  .melt(id_vars='County',
+    #                        value_vars=raw_cases.columns[1:].to_list(),
+    #                        var_name='Date',
+    #                        value_name='Cases_Daily',
+    #                        )
+    #                  )
+
 
     vitals_clean = (
         vitals_raw[~vitals_raw['County'].str.lower().str.contains(bad_county_values)]
         .rename(
             {
-                'Confirmed Cases': 'Cases_Cumulative',
-                'Fatalities': 'Deaths_Cumulative'
+                'Confirmed Cases': 'Cases_Daily',
+                'Fatalities': 'Deaths_Daily'
             },
             axis='columns'
         )
@@ -108,25 +124,28 @@ def clean_county_vitals(vitals_raw):
 
     # TODO: switch from cases daily calc to cases cumulative calc using daily data source
     vitals_final = (
-        vitals_combined
-        .astype(
-            {
-                'Cases_Cumulative': 'uint32',
-                'Deaths_Cumulative': 'uint32'
-            }
-        )
-        .assign(Date=lambda x: pd.to_datetime(x['Date']))
-        .sort_values(by=['County', 'Date'])
-        .assign(Cases_Daily=lambda x: x.groupby(['County'])['Cases_Cumulative'].diff())
-        .assign(Deaths_Daily=lambda x: x.groupby(['County'])['Deaths_Cumulative'].diff())
-        .groupby('County')
-        .tail(1)
-        .assign(Cases_Daily=lambda x: x['Cases_Daily'].fillna(0))
-        .assign(Deaths_Daily=lambda x: x['Deaths_Daily'].fillna(0))
+        vitals_clean.merge(existing_vitals,
+                           how='left',
+                           on='County'
+                           )
         .astype(
             {
                 'Cases_Daily': 'uint32',
                 'Deaths_Daily': 'uint32'
+            }
+        )
+        .assign(Date=lambda x: pd.to_datetime(x['Date']))
+        # .sort_values(by=['County', 'Date'])
+        .assign(Cases_Daily=lambda x: x['Cases_Daily'].fillna(0))
+        .assign(Deaths_Daily=lambda x: x['Deaths_Daily'].fillna(0))
+        .assign(Cases_Cumulative=lambda x: x['Cases_Daily'] + x['Cases_Cumulative_OLD'])
+        .assign(Deaths_Cumulative=lambda x: x['Deaths_Daily'] + x['Deaths_Cumulative_OLD'])
+        # .groupby('County')
+        # .tail(1)
+        .astype(
+            {
+                'Cases_Cumulative': 'uint32',
+                'Deaths_Cumulative': 'uint32'
             }
         )
     )
