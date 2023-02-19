@@ -43,10 +43,10 @@ def load_cases():
     return output_df
 
 
-# prepare county into groups with name "Level" and "Level_Name"
+# prepare county into groups with name "Level_Type" and "Level"
 # Level: County, TSA_Combined, PHR_Combined, Metro_Area, State
-def create_stacked_df(cases, level_name):
-    if level_name == 'State':
+def create_stacked_df(cases, level_type):
+    if level_type == 'State':
         stacked_df = (
             cases
             .groupby('Date')
@@ -58,8 +58,8 @@ def create_stacked_df(cases, level_name):
             )
             .with_columns(
                 [
-                    pl.lit('Texas').alias('Level_Name'),
-                    pl.lit('State').alias('Level')
+                    pl.lit('Texas').alias('Level'),
+                    pl.lit('State').alias('Level_Type')
 
                 ]
             )
@@ -67,27 +67,27 @@ def create_stacked_df(cases, level_name):
     else:
         stacked_df = (
             cases
-            .groupby([level_name, 'Date'])
+            .groupby([level_type, 'Date'])
             .agg(
                 [
                     pl.col('Cases_Daily').sum().alias('Cases_Daily'),
                     pl.col('Population_DSHS').sum().alias('Population_DSHS')
                 ]
             )
-            .rename({level_name: 'Level_Name'})
-            .with_columns(pl.lit(level_name).alias('Level'))
+            .rename({level_type: 'Level'})
+            .with_columns(pl.lit(level_type).alias('Level_Type'))
         )
 
-    stacked_df_out = stacked_df[['Level', 'Level_Name', 'Date', 'Cases_Daily', 'Population_DSHS']]
+    stacked_df_out = stacked_df[['Date', 'Level_Type', 'Level', 'Population_DSHS', 'Cases_Daily']]
     return stacked_df_out
 
 
 def prep_rt_groups(cases):
     cases_formatted = (
         cases
-        .rename({'County': 'Level_Name'})
-        .with_columns(pl.lit('County').alias('Level'))
-        [['Level', 'Level_Name', 'Date', 'Cases_Daily', 'Population_DSHS']]
+        .rename({'County': 'Level'})
+        .with_columns(pl.lit('County').alias('Level_Type'))
+        [['Date', 'Level_Type', 'Level', 'Population_DSHS', 'Cases_Daily']]
     )
 
     rt_prepped_df = pl.concat(
