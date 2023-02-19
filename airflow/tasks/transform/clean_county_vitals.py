@@ -73,8 +73,8 @@ def get_existing_values():
         '''
         select
         County,
-        Cases_Daily as Cases_Daily_OLD,
-        Deaths_Daily as Deaths_Daily_OLD
+        Cases_Cumulative as Cases_Cumulative_OLD,
+        Deaths_Cumulative as Deaths_Cumulative_OLD
         from main.county_vitals
         where date = (
                         select max(date) from main.county_vitals
@@ -86,80 +86,102 @@ def get_existing_values():
     return existing_vitals
 
 
-def clean_county_vitals(vitals_raw):
+def pivot_vitals(vitals_dict):
+    pivoted_df = (vitals_dict['df']
+                  .melt(id_vars='County',
+                        value_vars=vitals_dict['df'].columns[1:].to_list(),
+                        var_name='Date',
+                        value_name=vitals_dict['vital_colname'],
+                        )
+                  )
+    return pivoted_df
+
+
+def clean_county_vitals(vitals_combined):
     bad_county_values = '|'.join(['unallocated', 'unknown', '-', 'total', 'incomplete'])
-    final_cols = ['County', 'Date', 'Cases_Daily', 'Deaths_Daily']
 
-    # pivot values
-
-    # filter to only new values
-
-    # clean & compute
-
-    # return
-
-    # cases_pivoted = (raw_cases
-    #                  .melt(id_vars='County',
-    #                        value_vars=raw_cases.columns[1:].to_list(),
-    #                        var_name='Date',
-    #                        value_name='Cases_Daily',
-    #                        )
-    #                  )
-
-
-    vitals_clean = (
-        vitals_raw[~vitals_raw['County'].str.lower().str.contains(bad_county_values)]
-        .rename(
-            {
-                'Confirmed Cases': 'Cases_Daily',
-                'Fatalities': 'Deaths_Daily'
-            },
-            axis='columns'
-        )
-        [final_cols]
+    county_names = (
+        pd.read_sql("select distinct County from main.county_names",
+                    con=conn_stage)
+        ['County']
     )
 
-    existing_vitals = get_existing_values()
-    vitals_combined = pd.concat([existing_vitals, vitals_clean])
+    existing_cumulative_values = get_existing_values()
+    name_diff = set(existing_cumulative_values['County']).difference(set(county_names))
+    assert len(name_diff) == 0
 
-    # TODO: switch from cases daily calc to cases cumulative calc using daily data source
+    existing_vitals_date = (
+        pd.read_sql(
+            '''
+                select max(Date) as vitals_max_dt
+                from county_vitals
+            ''',
+            con=conn_prod
+        )
+        .assign(vitals_max_dt=lambda x: pd.to_datetime(x['vitals_max_dt']))
+        .squeeze()
+    )
+
     vitals_final = (
-        vitals_clean.merge(existing_vitals,
-                           how='left',
-                           on='County'
-                           )
+        vitals_combined
+        .merge(county_names,
+               how='inner',
+               on='County'
+               )
+        .assign(Date=lambda x: pd.to_datetime(x['Date']))
+        .query("Date > @existing_vitals_date")
+        .merge(existing_cumulative_values,
+               how='left',
+               on='County'
+               )
+        .assign(Cases_Daily=lambda x: x['Cases_Daily'].fillna(0))
+        .sort_values(by=['County', 'Date'])
+        .assign(Cases_Daily_Cumsum=lambda x: x.groupby('County')['Cases_Daily'].cumsum())
+        .assign(Cases_Cumulative=lambda x: x.Cases_Cumulative_OLD + x.Cases_Daily_Cumsum)
+        .assign(Deaths_Daily=lambda x: x['Deaths_Daily'].fillna(0))
+        .assign(Deaths_Daily_Cumsum=lambda x: x.groupby('County')['Deaths_Daily'].cumsum())
+        .assign(Deaths_Cumulative=lambda x: x.Deaths_Cumulative_OLD + x.Deaths_Daily_Cumsum)
         .astype(
             {
                 'Cases_Daily': 'uint32',
-                'Deaths_Daily': 'uint32'
-            }
-        )
-        .assign(Date=lambda x: pd.to_datetime(x['Date']))
-        # .sort_values(by=['County', 'Date'])
-        .assign(Cases_Daily=lambda x: x['Cases_Daily'].fillna(0))
-        .assign(Deaths_Daily=lambda x: x['Deaths_Daily'].fillna(0))
-        .assign(Cases_Cumulative=lambda x: x['Cases_Daily'] + x['Cases_Cumulative_OLD'])
-        .assign(Deaths_Cumulative=lambda x: x['Deaths_Daily'] + x['Deaths_Cumulative_OLD'])
-        # .groupby('County')
-        # .tail(1)
-        .astype(
-            {
+                'Deaths_Daily': 'uint32',
                 'Cases_Cumulative': 'uint32',
                 'Deaths_Cumulative': 'uint32'
             }
         )
     )
-
     return vitals_final
+
+
+def get_staging_vitals():
+    cases_raw = pd.read_sql('select * from county_vitals_cases', con=conn_stage)
+    deaths_raw = pd.read_sql('select * from county_vitals_deaths', con=conn_stage)
+    vitals_raw = {'cases':
+                      {'df': cases_raw,
+                       'vital_colname': 'Cases_Daily'},
+                  'deaths':
+                      {'df': deaths_raw,
+                       'vital_colname': 'Deaths_Daily'}
+                  }
+
+    vitals_pivoted = {key: pivot_vitals(vitals_raw[key]) for key, _ in vitals_raw.items()}
+    vitals_combined = (
+        pd.merge(vitals_pivoted['cases'], vitals_pivoted['deaths'],
+                 how='outer',
+                 on=['County', 'Date']
+                 )
+        .dropna(subset=['County', 'Date'])
+    )
+
+    return vitals_combined
 
 
 conn_prod = sqlite3.connect('db/prod.db')
 conn_stage = sqlite3.connect('db/staging.db')
 TODAY = dt.today()
 
-vitals_raw = pd.read_sql("select * from main.vitals", con=conn_stage)
-
-cleaned_vitals = clean_county_vitals(vitals_raw)
+staging_vitals = get_staging_vitals()
+cleaned_vitals = clean_county_vitals(staging_vitals)
 vital_diagnostics = run_diagnostics(cleaned_vitals)
 
 if vital_diagnostics.success:
