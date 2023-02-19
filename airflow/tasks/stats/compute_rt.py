@@ -3,6 +3,7 @@ import pandas as pd
 import sqlite3
 import pyspark
 import polars as pl
+from datetime import timedelta
 
 
 # endregion
@@ -114,6 +115,18 @@ def write_results(rt_results):
 
 
 def clean_stacked_cases(stacked_cases):
+    recent_case_avg_df = (
+        stacked_cases
+        .with_columns(pl.col("Date").max().over("Level").alias("Date_Max"))
+        .filter(pl.col("Date") > (pl.col('Date_Max') - timedelta(weeks=3)))
+        .groupby(['Level_Type', 'Level'])
+        .agg(
+            [
+                pl.col('Cases_Daily').mean().alias('Cases_Daily_Avg_3wk')
+            ]
+        )
+    )
+
     cleaned_cases = stacked_cases
     return cleaned_cases
 
