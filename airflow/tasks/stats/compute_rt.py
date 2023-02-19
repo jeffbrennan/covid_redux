@@ -138,8 +138,6 @@ def prep_rt(cases):
     return cleaned_cases
 
 
-conn_prod_pd = sqlite3.connect('db/prod.db')
-# conn_stage = sqlite3.connect('db/staging.db')
 conn_prod = f'sqlite://db/prod.db'
 conn_stage = f'sqlite://db/staging.db'
 
