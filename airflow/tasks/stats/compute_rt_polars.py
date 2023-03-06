@@ -59,65 +59,6 @@ def load_cases(use_disk_file=False):
     return output_df
 
 
-# prepare county into groups with name "Level_Type" and "Level"
-# Level: County, TSA_Combined, PHR_Combined, Metro_Area, State
-def create_stacked_df(cases, level_type):
-    if level_type == 'State':
-        stacked_df = (
-            cases
-            .groupby('Date')
-            .agg(
-                [
-                    pl.col('Cases_Daily').sum().alias('Cases_Daily'),
-                    pl.col('Population_DSHS').sum().alias('Population_DSHS')
-                ]
-            )
-            .with_columns(
-                [
-                    pl.lit('Texas').alias('Level'),
-                    pl.lit('State').alias('Level_Type')
-
-                ]
-            )
-        )
-    else:
-        stacked_df = (
-            cases
-            .groupby([level_type, 'Date'])
-            .agg(
-                [
-                    pl.col('Cases_Daily').sum().alias('Cases_Daily'),
-                    pl.col('Population_DSHS').sum().alias('Population_DSHS')
-                ]
-            )
-            .rename({level_type: 'Level'})
-            .with_columns(pl.lit(level_type).alias('Level_Type'))
-        )
-
-    stacked_df_out = stacked_df[['Date', 'Level_Type', 'Level', 'Population_DSHS', 'Cases_Daily']]
-    return stacked_df_out
-
-
-def prep_rt_groups(cases):
-    cases_formatted = (
-        cases
-        .rename({'County': 'Level'})
-        .with_columns(pl.lit('County').alias('Level_Type'))
-        [['Date', 'Level_Type', 'Level', 'Population_DSHS', 'Cases_Daily']]
-    )
-
-    rt_prepped_df = pl.concat(
-        [
-            cases_formatted,
-            create_stacked_df(cases, 'TSA_Combined'),
-            create_stacked_df(cases, 'PHR_Combined'),
-            create_stacked_df(cases, 'Metro_Area'),
-            create_stacked_df(cases, 'State')
-        ]
-    )
-
-    return rt_prepped_df
-
 
 def calculate_rt_spark(pandas_df):
     case_timeseries = pandas_df.set_index('Date')['Cases_MA_7Day']
@@ -194,42 +135,10 @@ def write_results(rt_results):
     rt_results['result'].to_sql('county_rt_test', con=conn_prod_pandas, if_exists='replace', index=False)
 
 
-def clean_stacked_cases(stacked_cases: pl.DataFrame) -> pl.DataFrame:
-    recent_case_avg_df = (
-        stacked_cases
-        .with_columns(pl.col("Date").max().over("Level").alias("Date_Max"))
-        .filter(pl.col("Date") > (pl.col('Date_Max') - timedelta(weeks=3)))
-        .groupby(['Level_Type', 'Level'])
-        .agg(
-            [
-                pl.col('Cases_Daily').mean().alias('Cases_Daily_Avg_3wk')
-            ]
-        )
-    )
-
-    cleaned_cases_df = (
-        stacked_cases
-        .join(recent_case_avg_df, how='inner', on=['Level_Type', 'Level'])
-        .with_columns(pl.col('Cases_Daily').rolling_mean(window_size=7, closed='right').alias('Cases_MA_7day'))
-        .filter(pl.col('Date') >= datetime(2020, 3, 15))
-        [['Date', 'Level_Type', 'Level', 'Cases_MA_7day', 'Population_DSHS']]
-        # .partition_by(['Level_Type', 'Level'], as_dict=True)
-    )
-
-    return cleaned_cases_df
-
-
-def prep_rt(cases: pl.DataFrame) -> dict:
-    stacked_cases = prep_rt_groups(cases)
-    cleaned_cases = clean_stacked_cases(stacked_cases)
-
-    return cleaned_cases
-
 conn_prod_pandas = sqlite3.connect('db/prod.db')
 conn_prod = f'sqlite://db/prod.db'
 
 
-cases = load_cases(use_disk_file=True)
-cleaned_cases = prep_rt(cases)
+cleaned_cases = load_cases()
 rt_results = get_rt(cleaned_cases)
 write_results(rt_results)
