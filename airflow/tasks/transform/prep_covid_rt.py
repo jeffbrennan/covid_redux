@@ -8,7 +8,7 @@ import sqlite3
 # endregion
 
 def Write_Output(df):
-    df.to_pandas().to_sql('covid_rt_prep', con=conn_prod_pandas, if_exists='replace')
+    df.to_pandas().to_sql('covid_rt_prep', con=conn_prod_pandas, if_exists='replace', index=False)
 
 
 # prepare county into groups with name "Level_Type" and "Level"
