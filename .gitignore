@@ -2,3 +2,6 @@
 /.Rhistory
 / SޛA
 .DS_Store
+*.log
+*.pyc
+/airflow/logs/.*
