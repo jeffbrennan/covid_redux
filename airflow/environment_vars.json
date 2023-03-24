@@ -1,0 +1,4 @@
+{
+  "AIRFLOW_VAR_DSHS_CASE_URL": "https://www.dshs.texas.gov/sites/default/files/chs/data/COVIDTexas%20COVID-19%20New%20Confirmed%20Cases%20by%20County.xlsx",
+  "AIRFLOW_VAR_DSHS_DEATH_URL": "https://www.dshs.texas.gov/sites/default/files/chs/data/COVIDTexas%20COVID-19%20Fatality%20Count%20Data%20by%20County.xlsx"
+}
