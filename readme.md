@@ -14,32 +14,17 @@ Modernizing the ETL of my [largest project]("https://github.com/jeffbrennan/Texa
 - Python
 - Docker
 - Airflow
-- Postgres
-
+- SQLite
 
 - ### Cloud (TBD)
     - Snowflake
     - AWS 
 - PowerBI
 
-## TODOs
+## Next steps
 
-https://www.youtube.com/watch?v=S1eapG6gjLU
-
-
-## Roadmap
-- [ ] Perform initial load of final tables using existing COVID repo
-
-- [ ] Ingest raw data into staging tables
-
-- [ ] Split and translate existing covid-scraping.rmd script into multiple separate python files to clean raw data
-
-- [ ] Create distinct diagnostic scripts that will validate cleaned output
-
-- [ ] Send to statistical analysis code
-
-- [ ] Validate analysis results
- 
-- [ ] Write final tables to database
-
-- [ ] Create sample visualization in PowerBI 
+1. Implement all scripts as airflow dags
+2. Do sample run
+3. Incorporate additional data sources (hospitalizations, vaccination demographics etc.)
+4. Move db from SQLite -> Postgres
+5. Move db from Postgres -> AWS
