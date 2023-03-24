@@ -5,3 +5,4 @@
 *.log
 *.pyc
 /airflow/logs/.*
+airflow/logs/scheduler/latest
