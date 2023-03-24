@@ -7,7 +7,7 @@ import sqlite3
 def get_new_sheetname(url):
     sheetnames = pd.ExcelFile(url).sheet_names
     new_sheet_name = sheetnames[-1]
-    assert str(TODAY.year) in new_sheet_name
+    assert str(dt.TODAY.year) in new_sheet_name
 
     return new_sheet_name
 
@@ -22,23 +22,25 @@ def get_vitals(url):
     return raw_df
 
 
-def manage_vitals():
+def manage_vitals(case_url, death_url):
     results = {'county_vitals_cases': get_vitals(case_url),
                'county_vitals_deaths': get_vitals(death_url)
                }
     return results
 
 
-conn_stage = sqlite3.connect('db/staging.db')
-conn_prod = sqlite3.connect('db/prod.db')
+def write_db(results, conn_stage):
+    for key, value in results.items():
+        value.to_sql(f'{key}', con=conn_stage, index=False, if_exists='replace')
 
-TODAY = dt.today()
+def main():
+    conn_stage = sqlite3.connect('db/staging.db')
+    conn_prod = sqlite3.connect('db/prod.db')
 
-dshs_base_url = 'https://www.dshs.texas.gov/sites/default/files/chs/data/COVID'
-case_url = f'{dshs_base_url}/Texas%20COVID-19%20New%20Confirmed%20Cases%20by%20County.xlsx'
-death_url = f'{dshs_base_url}/Texas%20COVID-19%20Fatality%20Count%20Data%20by%20County.xlsx'
 
-results = manage_vitals()
+    dshs_base_url = 'https://www.dshs.texas.gov/sites/default/files/chs/data/COVID'
+    case_url = f'{dshs_base_url}/Texas%20COVID-19%20New%20Confirmed%20Cases%20by%20County.xlsx'
+    death_url = f'{dshs_base_url}/Texas%20COVID-19%20Fatality%20Count%20Data%20by%20County.xlsx'
 
-for key, value in results.items():
-    value.to_sql(f'{key}', con=conn_stage, index=False, if_exists='replace')
+    results = manage_vitals(case_url, death_url)
+    write_db(results, conn_stage)
