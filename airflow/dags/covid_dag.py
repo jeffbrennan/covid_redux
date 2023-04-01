@@ -3,7 +3,7 @@ from airflow.operators.python import PythonOperator
 from airflow.models import Variable
 from datetime import datetime as dt
 from tasks.extract.get_covid_vitals_daily import get_vitals, write_db
-
+from tasks.transform.clean_county_vitals import clean_staging_vitals, run_diagnostics, write_vitals_to_prod
 
 default_args = {
     'owner': 'airflow',
@@ -48,5 +48,20 @@ with DAG(
         op_kwargs={'df_name': 'raw_deaths_daily', 'table_name': 'county_vitals_deaths'}
     )
 
-    get_case_task >> write_db_cases
-    get_death_task >> write_db_deaths
+    clean_staging_vitals = PythonOperator(
+        task_id='clean_staging_vitals',
+        python_callable=clean_staging_vitals,
+    )
+
+    run_diagnostics = PythonOperator(
+        task_id='run_diagnostics',
+        python_callable=run_diagnostics,
+    )
+
+    write_vitals_to_prod = PythonOperator(
+        task_id='write_vitals_to_prod',
+        python_callable=write_vitals_to_prod,
+    )
+
+    # [get_case_task, get_death_task] >> write_db_cases >> write_db_deaths >> clean_staging_vitals >> \
+    run_diagnostics >> write_vitals_to_prod
