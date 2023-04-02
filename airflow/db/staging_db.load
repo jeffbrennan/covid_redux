@@ -1,0 +1,7 @@
+load database
+     from 'staging.db'
+     into postgresql:///staging
+
+ with include drop, create tables, create indexes, reset sequences
+ excluding table names like 'tpr_raw'
+  set work_mem to '16MB', maintenance_work_mem to '512 MB';
