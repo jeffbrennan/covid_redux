@@ -46,7 +46,7 @@ default_args = {
 }
 
 with DAG(
-        dag_id='covid_dag',
+        dag_id='covid_dag_sidecar_test',
         schedule_interval='@weekly',
         default_args=default_args
 ) as dag:
