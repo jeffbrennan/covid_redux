@@ -11,10 +11,10 @@ Modernizing the ETL of my [largest project]("https://github.com/jeffbrennan/Texa
 ## Tools
 
 - ### Local
-- Python
-- Docker
-- Postgres
-- Dagster
+  - Python
+  - Docker
+  - Postgres
+  - Dagster
 
 - ### Cloud (soon)
   - AWS 
@@ -23,7 +23,7 @@ Modernizing the ETL of my [largest project]("https://github.com/jeffbrennan/Texa
 ## Next steps
 - [x] Vitals data loaded and cleaned
 - [ ] Vaccination data loaded and cleaned
-- [ ] Dbt scripts reorganized
+- [ ] Dbt models reorganized
 - [ ] Tests added to all scripts
 - [ ] Weekly run set up 
 - [ ] Migrate local parquet storage to aws s3
