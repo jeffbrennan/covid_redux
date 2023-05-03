@@ -5,7 +5,7 @@ Modernizing the ETL of my [largest project]("https://github.com/jeffbrennan/Texa
 ## Goals
 
 - Transition all csv/xlsx output to database tables
-- Transition manual diagnostic checking & etl to airflow
+- Transition manual diagnostic checking & etl to dbt+dagster
 - Only clean and write updates for newest data
 
 ## Tools
@@ -13,18 +13,19 @@ Modernizing the ETL of my [largest project]("https://github.com/jeffbrennan/Texa
 - ### Local
 - Python
 - Docker
-- Airflow
-- SQLite
+- Postgres
+- Dagster
 
-- ### Cloud (TBD)
-    - Snowflake
-    - AWS 
-- PowerBI
+- ### Cloud (soon)
+  - AWS 
+  - PowerBI
 
 ## Next steps
-
-1. Implement all scripts as airflow dags
-2. Do sample run
-3. Incorporate additional data sources (hospitalizations, vaccination demographics etc.)
-4. Move db from SQLite -> Postgres
-5. Move db from Postgres -> AWS
+- [x] Vitals data loaded and cleaned
+- [ ] Vaccination data loaded and cleaned
+- [ ] Dbt scripts reorganized
+- [ ] Tests added to all scripts
+- [ ] Weekly run set up 
+- [ ] Migrate local parquet storage to aws s3
+- [ ] Migrate local postgres to aws rds
+- [ ] Set up config to run on ECS cluster
