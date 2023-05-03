@@ -1,8 +1,19 @@
+covid_pipeline/logs/dbt.log
 .idea/
-/.Rhistory
-/ SޛA
-.DS_Store
-*.log
-*.pyc
-/airflow/logs/.*
-airflow/logs/scheduler/latest
+.vscode/
+/airflow_attempt
+/airflow
+covid_pipeline/covid_dagster/__pycache__/__init__.cpython-39.pyc
+*.DS_Store
+*.db
+*.err 
+*.out
+*.complete
+*.parquet
+*.txt
+covid_redux.egg-info/PKG-INFO
+covid_pipeline/covid_dbt/config/profiles.yml
+covid_pipeline/sandbox/test_db.sql
+covid_pipeline/covid_dagster/.nux/nux.yaml
+covid_pipeline/covid_dagster/assets/__pycache__/__init__.cpython-39.pyc
+covid_pipeline/covid_dbt/config/.user.yml
