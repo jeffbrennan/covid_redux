@@ -1,0 +1,12 @@
+# /tutorial_template/jaffle_shop/models/sources.yml
+
+version: 2
+
+sources:
+  - name: dbt
+    tables:
+      - name: county_cases_raw
+      - name: county_deaths_raw
+  - name: metadata
+    tables:
+      - name: county_names
