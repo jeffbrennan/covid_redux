@@ -20,9 +20,8 @@ models:
       +materialized: table
       +schema: staging
     intermediate:
-      fct_county_vitals:
-        +materialized: table
-        +schema: intermediate
+      +materialized: table
+      +schema: intermediate
     mart:
       +materialized: table
       +schema: mart
