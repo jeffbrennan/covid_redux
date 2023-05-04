@@ -1,45 +1,89 @@
 import pandas as pd
-import sqlite3
+from sqlalchemy import create_engine
+from sqlalchemy import types
 import os
-#region setup -----
-# os.chdir('covid_redux')
-base_url = 'https://raw.githubusercontent.com/jeffbrennan/TexasPandemics/master'
-conn_stage = sqlite3.connect('db/staging.db')
-conn_prod = sqlite3.connect('db/prod.db')
-#endregion
 
-#region helpers -----
-# county lookup
-county_lookup = pd.read_csv(f'{base_url}/tableau/county.csv')
-county_lookup_final = county_lookup[['County', 'TSA_Combined', 'PHR_Combined', 'Metro_Area', 'Population_DSHS']]
-county_lookup_final.drop_duplicates(inplace=True)
-
-county_lookup_final.to_sql('county_names', conn_stage, if_exists='replace', index=False)
+# region setup -----
+base_url = 'https://raw.githubusercontent.com/jeffbrennan/TexasPandemics/2023_dashboard_refresh'
+conn_local = create_engine('postgresql://jeffb@localhost:5432/covid')
 # endregion
 
-#region initial upload -----
+# region helpers -----
+# county lookup
+county_lookup = pd.read_csv(f'{base_url}/tableau/county.csv')
+county_lookup_final = (
+    county_lookup[['County', 'TSA_Combined', 'PHR_Combined', 'Metro_Area']]
+    .drop_duplicates()
+    .rename(columns={'County': 'county', 'TSA_Combined': 'tsa', 'PHR_Combined': 'phr', 'Metro_Area': 'metro_area'})
+)
+county_lookup_final.to_sql('dim_county_names', conn_local, schema='mart', if_exists='replace', index=False)
+# endregion
 
-#region counties -----
-#region vitals -----
-tableau_county_csv = pd.read_csv(f'{base_url}/tableau/county.csv')
-tableau_county_csv.to_sql('county', con=conn_prod, if_exists='replace')
+# county populations
+county_populations = (
+    county_lookup[['County', 'Date', 'Population_DSHS']]
+    .drop_duplicates()
+    .sort_values('Date')
+    .groupby(['County', 'Population_DSHS'])
+    .first()
+    .reset_index()
+    [['County', 'Date', 'Population_DSHS']]
+    .sort_values(['County', 'Date'])
+    .assign(start_date=lambda x: x['Date'],
+            end_date=lambda x: x.groupby('County')['Date'].shift(-1)
+            )
+    .rename(columns={'County': 'county', 'Population_DSHS': 'population'})
+    [['county', 'start_date', 'end_date', 'population']]
+)
 
-tableau_stacked_demo = pd.read_csv(f'{base_url}/tableau/stacked_demographics.csv')
-tableau_stacked_demo.to_sql('stacked_demographics', con=conn_prod, if_exists='replace')
+county_populations_types = {
+    'county': types.VARCHAR(length=255),
+    'start_date': types.DATE,
+    'end_date': types.DATE,
+    'population': types.INTEGER
+}
 
-#endregion
-#region vaccines -----
+county_populations.to_sql(
+    'dim_county_populations',
+    conn_local,
+    schema='mart',
+    if_exists='replace',
+    index=False,
+    dtype=county_populations_types
+)
 
+# region initial upload -----
 
-#endregion
-#endregion
+# region counties -----
+# region vitals -----
 
-tableau_county_tpr = pd.read_csv(f'{base_url}/tableau/county_TPR.csv')
-tableau_county_tpr.to_sql('county_TPR', con=conn_prod, if_exists='replace')
-#region stats -----
+county_vitals = (
+    county_lookup
+    [['County', 'Date', 'Case_Type', 'Cases_Daily', 'Cases_Cumulative', 'Deaths_Daily', 'Deaths_Cumulative']]
+    .rename(
+        columns={
+            'County': 'county', 'Date': 'date', 'Case_Type': 'case_type',
+            'Cases_Daily': 'cases_daily', 'Cases_Cumulative': 'cases_cumsum',
+            'Deaths_Daily': 'deaths_daily', 'Deaths_Cumulative': 'deaths_cumsum'}
+    )
+)
 
-tableau_stacked_rt = pd.read_csv(f'{base_url}/tableau/stacked_rt.csv')
-tableau_stacked_rt.to_sql('stacked_rt', con=conn_prod, if_exists='replace')
-#endregion
+county_vitals_types = {
+    'county': types.VARCHAR(length=255),
+    'date': types.DATE,
+    'case_type': types.VARCHAR(length=23),   # confirmed or confirmed_plus_probable
+    'cases_daily': types.INTEGER,
+    'cases_cumsum': types.INTEGER,
+    'deaths_daily': types.INTEGER,
+    'deaths_cumsum': types.INTEGER
+}
 
-#endregion
+county_vitals.to_sql(
+    'fct_county_vitals',
+    conn_local,
+    schema='mart',
+    if_exists='replace',
+    index=False,
+    dtype=county_vitals_types
+)
+# endregion
