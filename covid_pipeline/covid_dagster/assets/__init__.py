@@ -42,6 +42,18 @@ def county_cases_raw(context) -> pd.DataFrame:
     data = get_vitals(case_url)
     return data
 
+@asset(
+    name="raw_county_cases_probable",
+    key_prefix=["dbt"],
+    group_name="staging",
+    metadata={"table_name": "raw_county_cases_probable"},
+    io_manager_key='pandas_to_postgres_io_manager'
+)
+def raw_county_cases_probable(context) -> pd.DataFrame:
+    case_url = "https://www.dshs.texas.gov/sites/default/files/chs/data/COVID/Texas%20COVID-19%20New%20Probable%20Cases%20by%20County.xlsx"
+    data = get_vitals(case_url)
+    return data
+
 
 @asset(
     name="county_deaths_raw",
