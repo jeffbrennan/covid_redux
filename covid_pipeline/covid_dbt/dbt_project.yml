@@ -16,12 +16,15 @@ clean-targets:         # directories to be removed by `dbt clean`
 
 models:
   covid_dbt:
-    # Config indicated by + and applies to all files under models/example/
     staging:
-      +materialized: view
-    cleaning:
-      +materialized: view
-    prod:
       +materialized: table
+      +schema: staging
+    intermediate:
+      fct_county_vitals:
+        +materialized: table
+        +schema: intermediate
+    mart:
+      +materialized: table
+      +schema: mart
 vars:
   'dbt_date:time_zone': 'America/New_York'
