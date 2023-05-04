@@ -1,13 +1,13 @@
-with unpivot_test as ({{ dbt_utils.unpivot(
-        relation=ref('cleaned_names_county_deaths'),
+with unpivot_cases as ({{ dbt_utils.unpivot(
+        relation=ref('cleaned_names_county_cases'),
         cast_to='int',
         exclude=['county'],
         field_name='date',
-        value_name='deaths_cumsum'
+        value_name='cases_daily'
     )
 }})
 select
     county,
     to_date(replace(date, 'value_', ''), 'MM_DD_YYYY') as date,
-    deaths_cumsum
-from unpivot_test
+    cases_daily
+from unpivot_cases
