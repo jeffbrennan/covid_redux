@@ -2,10 +2,10 @@ models:
   - name: stg_county_cases
     tests:
       - dbt_expectations.expect_table_row_count_to_equal_other_table:
-          compare_model: ref('county_metadata')
+          compare_model: ref('dim_county_names')
           row_condition: "county is not null"
   - name: stg_county_deaths
     tests:
       - dbt_expectations.expect_table_row_count_to_equal_other_table:
-          compare_model: ref('county_metadata')
+          compare_model: ref('dim_county_names')
           row_condition: "county is not null"
