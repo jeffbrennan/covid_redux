@@ -1,5 +1,10 @@
 models:
-  - name: stg_county_cases
+  - name: stg_county_cases_confirmed
+    tests:
+      - dbt_expectations.expect_table_row_count_to_equal_other_table:
+          compare_model: ref('dim_county_names')
+          row_condition: "county is not null"
+  - name: stg_county_cases_probable
     tests:
       - dbt_expectations.expect_table_row_count_to_equal_other_table:
           compare_model: ref('dim_county_names')
