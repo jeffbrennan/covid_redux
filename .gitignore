@@ -17,3 +17,4 @@ covid_pipeline/sandbox/test_db.sql
 covid_pipeline/covid_dagster/.nux/nux.yaml
 covid_pipeline/covid_dagster/assets/__pycache__/__init__.cpython-39.pyc
 covid_pipeline/covid_dbt/config/.user.yml
+*.pyc
