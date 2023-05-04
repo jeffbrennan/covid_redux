@@ -10,14 +10,14 @@ with
         select
             county,
             date,
-            deaths_daily
+            deaths_cumsum
         from {{ref('unpivot_county_deaths')}}
     )
 select
     c.county,
     c.date,
     c.cases_daily,
-    d.deaths_daily
+    d.deaths_cumsum
 from county_cases c
 full join county_deaths d
     on c.county = d.county
