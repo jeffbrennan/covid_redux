@@ -69,22 +69,50 @@ county_vitals = (
     )
 )
 
-county_vitals_types = {
+county_cases = (
+    county_vitals
+    [['county', 'date', 'case_type', 'cases_daily', 'cases_cumsum']]
+)
+
+county_cases_types = {
     'county': types.VARCHAR(length=255),
     'date': types.DATE,
     'case_type': types.VARCHAR(length=23),   # confirmed or confirmed_plus_probable
     'cases_daily': types.INTEGER,
     'cases_cumsum': types.INTEGER,
-    'deaths_daily': types.INTEGER,
-    'deaths_cumsum': types.INTEGER
 }
 
-county_vitals.to_sql(
-    'fct_county_vitals',
+county_cases.to_sql(
+    'fct_county_cases',
     conn_local,
     schema='mart',
     if_exists='replace',
     index=False,
-    dtype=county_vitals_types
+    dtype=county_cases_types
 )
+
+county_deaths = (
+    county_vitals
+    [['county', 'date', 'deaths_daily', 'deaths_cumsum']]
+    .drop_duplicates()
+)
+
+county_deaths_types = {
+    'county': types.VARCHAR(length=255),
+    'date': types.DATE,
+    'deaths_daily': types.INTEGER,
+    'deaths_cumsum': types.INTEGER,
+}
+
+county_deaths.to_sql(
+    'fct_county_deaths',
+    conn_local,
+    schema='mart',
+    if_exists='replace',
+    index=False,
+    dtype=county_deaths_types
+)
+
+
+
 # endregion
