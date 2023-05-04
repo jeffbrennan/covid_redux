@@ -7,26 +7,7 @@ from datetime import date
 import pandas as pd
 
 from dagster import Config
-
 from dagster import Output
-
-
-# class PandasIOManager(IOManager):
-#     def __init__(self, con_string: str):
-#         self._con = con_string
-#
-#     def handle_output(self, context, obj):
-#         # dbt handles outputs for us
-#         pass
-#
-#     def load_input(self, context) -> pd.DataFrame:
-#         """Load the contents of a table as a pandas DataFrame."""
-#         table_name = context.asset_key.path[-1]
-#         return pd.read_sql(f"SELECT * FROM {table_name}", con=self._con)
-#
-# @io_manager(config_schema={"con_string": str})
-# def dbt_io_manager(context):
-#     return PandasIOManager(context.resource_config["con_string"])
 
 
 def get_vitals(url: str) -> pd.DataFrame:
@@ -84,17 +65,3 @@ dbt_assets = load_assets_from_dbt_project(
     key_prefix=["dbt"],
     io_manager_key="dbt_to_dbt_io_manager",
 )
-# {
-#     "dbt_io_manager": dbt_io_manager.configured({'con_string': 'postgresql://jeffb@localhost:5432/covid'})
-# }
-# )
-
-# downstream plot that references the materialized customers table
-# @asset(
-#    ins={"prod.county_vitals": AssetIn(key_prefix=["covid_pipeline"])},
-#    group_name="prod",
-# )
-# def covid_dagster_test(vitals) -> pd.DataFrame:
-#    vitals_cleaned = vitals.copy()
-#    vitals_cleaned['dagster_test'] = 'dagster_test'
-#    return vitals_cleaned
