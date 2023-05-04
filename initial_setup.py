@@ -16,7 +16,7 @@ county_lookup_final = (
     .drop_duplicates()
     .rename(columns={'County': 'county', 'TSA_Combined': 'tsa', 'PHR_Combined': 'phr', 'Metro_Area': 'metro_area'})
 )
-county_lookup_final.to_sql('dim_county_names', conn_local, schema='mart', if_exists='replace', index=False)
+county_lookup_final.to_sql('county_names', conn_local, schema='dbt', if_exists='replace', index=False)
 # endregion
 
 # county populations
@@ -44,9 +44,9 @@ county_populations_types = {
 }
 
 county_populations.to_sql(
-    'dim_county_populations',
+    'county_populations',
     conn_local,
-    schema='mart',
+    schema='dbt',
     if_exists='replace',
     index=False,
     dtype=county_populations_types
@@ -60,6 +60,7 @@ county_populations.to_sql(
 county_vitals = (
     county_lookup
     [['County', 'Date', 'Case_Type', 'Cases_Daily', 'Cases_Cumulative', 'Deaths_Daily', 'Deaths_Cumulative']]
+    .query('Date < "2023-04-30"')
     .rename(
         columns={
             'County': 'county', 'Date': 'date', 'Case_Type': 'case_type',
