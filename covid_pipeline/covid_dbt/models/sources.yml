@@ -5,7 +5,8 @@ version: 2
 sources:
   - name: dbt
     tables:
-      - name: county_cases_raw
-      - name: county_deaths_raw
+      - name: raw_county_cases_confirmed
+      - name: raw_county_cases_probable
+      - name: raw_county_deaths
       - name: county_names
       - name: county_populations
