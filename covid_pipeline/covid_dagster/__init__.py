@@ -197,7 +197,8 @@ resources = {
         },
     ),
     "pandas_to_postgres_io_manager": ParquetToPostgresManager(),
-    'dbt_to_dbt_io_manager': DBTManager()
+    "dbt_to_dbt_io_manager": DBTManager(),
+    "postgres_to_polars_io_manager": PostgresToPolarsManager(),
 }
 defs = Definitions(assets=load_assets_from_modules([assets]), resources=resources)
 # endregion
