@@ -4,6 +4,9 @@ from dagster import file_relative_path
 # cases (confirmed, probable) and deaths
 import covid_dagster.assets.load_vitals
 
+# rt calculation
+from covid_dagster.assets.compute_rt import rt_results
+
 DBT_PROJECT_PATH = file_relative_path(__file__, "../../covid_dbt")
 DBT_PROFILES = file_relative_path(__file__, "../../covid_dbt/config")
 
