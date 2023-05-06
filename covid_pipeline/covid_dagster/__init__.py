@@ -128,13 +128,25 @@ class ParquetToPostgresManager(ConfigurableIOManager):
 
 
 class DBTManager(ConfigurableIOManager):
-    def handle_output(self, context, obj: Any) -> None:
-        print('Handling output!')
+    def handle_output(self, context) -> None:
         pass
 
-    def load_input(self, context) -> Any:
+    def load_input(self, context) -> pl.DataFrame:
         print('Handling input!')
-        pass
+
+        asset_key = context.asset_key
+
+        if len(asset_key.path) != 3:
+            raise ValueError(f'Expected asset key to have 3 parts, got {len(asset_key.path)}')
+        schema = asset_key.path[1]
+        table_name = asset_key.path[2]
+
+        # polars implementation
+        uri = 'postgresql://jeffb@localhost:5432/covid'
+        query = f'select * from {schema}.{table_name}'
+        df = pl.read_database(query=query, connection_uri=uri)
+
+        return df
 
 
 # class PandasIOManager(IOManager):
