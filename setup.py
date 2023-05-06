@@ -4,15 +4,29 @@ setup(
     name="covid_redux",
     packages=find_packages(),
     install_requires=[
-        "grpcio==1.47.5",
+
+        # dagster
         "dagster",
         "dagster-dbt",
         "dagster-postgres",
-        "pandas",
+
+        # dbt
         "dbt-core",
+
+
+        "grpcio==1.47.5",
+
+        #  file processing
+
+        "pandas",
         "openpyxl",
         "pyarrow",
-        "fastparquet"
+        "fastparquet",
+        "polars>=0.17.12"
+        "connectorx",
+
+        # rt estimate
+        "epyestim"
     ],
     extras_require={"dev": ["dagit", "pytest"]},
 )
