@@ -1,6 +1,7 @@
-from typing import Any
+from pathlib import Path
 
 import pandas as pd
+import polars as pl
 from dagster import ConfigurableIOManager
 from dagster import Definitions, load_assets_from_modules
 from dagster import (
@@ -12,6 +13,73 @@ from sqlalchemy import create_engine
 
 from covid_dagster import assets
 from covid_dagster.assets import DBT_PROFILES, DBT_PROJECT_PATH
+
+
+class PostgresToPolarsManager(ConfigurableIOManager):
+    @staticmethod
+    def read_dataframe_from_disk(schema: str, table_name: str) -> pl.DataFrame:
+        df = pl.read_parquet(f'covid_dagster/storage/{schema}/{table_name}.parquet')
+        return df
+
+    @staticmethod
+    def read_table_from_db(schema: str, table_name: str) -> pl.DataFrame:
+        uri = 'postgresql://jeffb@localhost:5432/covid'
+        query = f'select * from {schema}.{table_name}'
+        df = pl.read_database(query=query, connection_uri=uri)
+        return df
+
+    @staticmethod
+    def write_table_to_db(schema: str, table_name: str, dataframe: pl.DataFrame) -> None:
+        conn_local = create_engine('postgresql://jeffb@localhost:5432/covid')
+        conn_local.execute(f'drop table if exists {schema}.{table_name} cascade')
+
+        # workaround for pyarrow error NotImplementedError dt.tz
+        orig_date_colnames = dataframe.select(pl.col('date')).columns
+        datetime_replacement_dict = {key: 'datetime64[ns]' for key in orig_date_colnames}
+
+        (
+            dataframe
+            .to_pandas(types_mapper=pd.ArrowDtype)
+            .astype(datetime_replacement_dict)
+            .to_sql(
+                schema=schema,
+                name=table_name,
+                con=conn_local,
+                if_exists='replace'
+            )
+        )
+
+        # TODO: make sql injection safe
+        for datetime_col in orig_date_colnames:
+            conn_local.execute(
+                'alter table '
+                f'{schema}.{table_name} '
+                f'alter column {datetime_col} '
+                ' type date; '
+            )
+
+    @staticmethod
+    def write_dataframe_to_disk(schema: str, table_name: str, dataframe: pl.DataFrame) -> None:
+        Path(f'covid_dagster/storage/{schema}').mkdir(parents=True, exist_ok=True)
+        dataframe.write_parquet(
+            file=f'covid_dagster/storage/{schema}/{table_name}.parquet',
+            compression='lz4'
+        )
+
+    # step 1
+    def handle_output(self, context, obj: pd.DataFrame) -> None:
+        table_name = context.metadata['table_name']
+
+        schema = context.metadata['schema']
+        self.write_dataframe_to_disk(schema=schema, table_name=table_name, dataframe=obj)
+        self.write_table_to_db(schema=schema, table_name=table_name, dataframe=obj)
+
+    # step 2
+    def load_input(self, context) -> None:
+        table_name = context.upstream_output.metadata['table_name']
+
+        schema = context.upstream_output.metadata['schema']
+        self.read_table_from_db(table_name=table_name, schema=schema)
 
 
 class ParquetToPostgresManager(ConfigurableIOManager):
