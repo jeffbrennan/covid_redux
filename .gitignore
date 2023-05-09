@@ -3,6 +3,7 @@
 *.err 
 *.out
 *.complete
+*.env
 
 *.pyc
 *.parquet
