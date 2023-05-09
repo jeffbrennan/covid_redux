@@ -7,7 +7,7 @@ from dagster import asset
 
 def get_vitals(url: str) -> pd.DataFrame:
     sheetnames = pd.ExcelFile(url, engine='openpyxl').sheet_names
-    new_sheet_name = sheetnames[-1]
+    new_sheet_name = str(sheetnames[-1])
     current_year = str(dt.today().year)
     assert current_year in new_sheet_name
 
