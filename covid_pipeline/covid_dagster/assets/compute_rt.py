@@ -2,6 +2,7 @@ import time
 import polars as pl
 import epyestim.covid19 as covid19
 from dagster import asset, AssetIn
+import pandas as pd
 
 
 @asset(
@@ -16,7 +17,7 @@ from dagster import asset, AssetIn
     io_manager_key='polars_io_manager'
 )
 def rt_results(rt_prep_df: pl.DataFrame) -> pl.DataFrame:
-    def get_case_timeseries(cases: pl.Series, dates: pl.Series) -> pl.Series:
+    def get_case_timeseries(cases: pl.Series, dates: pl.Series) -> pd.Series:
         return cases.to_pandas().set_axis(dates.to_pandas())
 
     def calculate_rt(df: pl.DataFrame) -> pl.DataFrame:
@@ -43,7 +44,7 @@ def rt_results(rt_prep_df: pl.DataFrame) -> pl.DataFrame:
 
         return final_result
 
-    def get_rt(cleaned_cases: pl.DataFrame) -> dict:
+    def get_rt(cleaned_cases: pl.DataFrame) -> pl.DataFrame:
         sample_levels = ['Harris', 'Bexar', 'Travis']
         num_levels = len(sample_levels)
 
@@ -75,6 +76,4 @@ def rt_results(rt_prep_df: pl.DataFrame) -> pl.DataFrame:
         .with_columns(last_updated=pl.lit(time.time_ns()))
 
     )
-
-    rt_result
     return rt_result
