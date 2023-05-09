@@ -2,7 +2,7 @@ from dagster_dbt import load_assets_from_dbt_project
 from dagster import file_relative_path
 
 # cases (confirmed, probable) and deaths
-import covid_dagster.assets.load_vitals
+from covid_dagster.assets.load_vitals import raw_county_cases_confirmed, raw_county_cases_probable, raw_county_deaths
 
 # rt calculation
 from covid_dagster.assets.compute_rt import rt_results
