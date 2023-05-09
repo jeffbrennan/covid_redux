@@ -10,3 +10,6 @@ sources:
       - name: raw_county_deaths
       - name: county_names
       - name: county_populations
+  - name: intermediate
+    tables:
+      - name: rt_results
