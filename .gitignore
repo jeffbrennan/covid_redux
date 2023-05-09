@@ -4,7 +4,7 @@
 *.out
 *.complete
 *.env
-
+*.xlsx
 *.pyc
 *.parquet
 *.txt
