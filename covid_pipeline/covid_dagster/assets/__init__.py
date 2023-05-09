@@ -7,6 +7,9 @@ from covid_dagster.assets.load_vitals import raw_county_cases_confirmed, raw_cou
 # rt calculation
 from covid_dagster.assets.compute_rt import rt_results
 
+# vaccinations
+from covid_dagster.assets.load_vaccinations import raw_county_vaccinations
+
 DBT_PROJECT_PATH = file_relative_path(__file__, "../../covid_dbt")
 DBT_PROFILES = file_relative_path(__file__, "../../covid_dbt/config")
 

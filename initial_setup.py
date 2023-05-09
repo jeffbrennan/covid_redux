@@ -1,7 +1,6 @@
 import pandas as pd
 from sqlalchemy import create_engine
 from sqlalchemy import types
-import os
 
 # region setup -----
 base_url = 'https://raw.githubusercontent.com/jeffbrennan/TexasPandemics/2023_dashboard_refresh'
@@ -77,7 +76,7 @@ county_cases = (
 county_cases_types = {
     'county': types.VARCHAR(length=255),
     'date': types.DATE,
-    'case_type': types.VARCHAR(length=23),   # confirmed or confirmed_plus_probable
+    'case_type': types.VARCHAR(length=23),  # confirmed or confirmed_plus_probable
     'cases_daily': types.INTEGER,
     'cases_cumsum': types.INTEGER,
 }
@@ -113,6 +112,46 @@ county_deaths.to_sql(
     dtype=county_deaths_types
 )
 
+# endregion
+
+# region vaccinations -----
+county_vaccinations_raw = pd.read_csv(f'{base_url}/tableau/sandbox/county_daily_vaccine.csv')
+max_vax_date = county_vaccinations_raw['Date'].max()
+
+county_vaccinations = (
+    county_vaccinations_raw
+    .query('Vaccination_Type == "all"')
+    [['County', 'Date', 'Doses_Administered', 'At_Least_One_Dose', 'Fully_Vaccinated', 'Boosted']]
+    .rename(
+        columns={
+            'County': 'county',
+            'Date': 'date',
+            'Doses_Administered': 'vaccine_doses_administered',
+            'At_Least_One_Dose': 'people_vaccinated_with_at_least_one_dose',
+            'Fully_Vaccinated': 'people_fully_vaccinated',
+            'Boosted': 'people_vaccinated_with_at_least_one_booster_dose'
+        }
+    )
+    .query('date < @max_vax_date')
+)
+
+county_vaccinations_types = {
+    'county': types.VARCHAR(length=255),
+    'date': types.DATE,
+    'vaccine_doses_administered': types.INTEGER,
+    'people_vaccinated_with_at_least_one_dose': types.INTEGER,
+    'people_fully_vaccinated': types.INTEGER,
+    'people_vaccinated_with_at_least_one_booster_dose': types.INTEGER
+}
 
 
+
+county_vaccinations.to_sql(
+    'fct_county_vaccinations',
+    conn_local,
+    schema='mart',
+    if_exists='replace',
+    index=False,
+    dtype=county_vaccinations_types
+)
 # endregion

@@ -5,6 +5,7 @@ version: 2
 sources:
   - name: origin
     tables:
+      - name: raw_county_vaccinations
       - name: raw_county_cases_confirmed
       - name: raw_county_cases_probable
       - name: raw_county_deaths
