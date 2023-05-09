@@ -154,6 +154,12 @@ class DBTManager(ConfigurableIOManager):
 
         return df
 
+class NoneManager(ConfigurableIOManager):
+    def handle_output(self, context, obj):
+        pass
+
+    def load_input(self, context):
+        pass
 
 def test_my_io_manager_handle_output(manager):
     test_df = pd.DataFrame({'a': [1, 2, 3], 'b': [4, 5, 6]})
@@ -195,6 +201,7 @@ resources = {
     "pandas_io_manager": PandasManager(connection_string=CONNECTION_STRING),
     "dbt_io_manager": DBTManager(connection_string=CONNECTION_STRING),
     "polars_io_manager": PolarsManager(connection_string=CONNECTION_STRING),
+    'none_io_manager': NoneManager()
 }
 
 defs = Definitions(assets=load_assets_from_modules([assets]), resources=resources)
