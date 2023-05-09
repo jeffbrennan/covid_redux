@@ -25,5 +25,8 @@ models:
     mart:
       +materialized: table
       +schema: mart
+    metadata:
+      +materialized: view
+      +schema: metadata
 vars:
   'dbt_date:time_zone': 'America/New_York'
