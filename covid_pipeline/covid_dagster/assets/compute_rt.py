@@ -5,14 +5,15 @@ from dagster import asset, AssetIn
 
 
 @asset(
+    name='rt_results',
     group_name="intermediate",
-    key_prefix=['dbt'],
-    ins={'rt_prep_df': AssetIn(key=['dbt', 'intermediate', 'rt_prep_df'])},
+    key_prefix=['intermediate'],
+    ins={'rt_prep_df': AssetIn(key=['covid', 'intermediate', 'rt_prep_df'])},
     metadata={
         'schema': 'intermediate',
         "table_name": 'rt_results'
     },
-    io_manager_key='postgres_to_polars_io_manager'
+    io_manager_key='polars_io_manager'
 )
 def rt_results(rt_prep_df: pl.DataFrame) -> pl.DataFrame:
     def get_case_timeseries(cases: pl.Series, dates: pl.Series) -> pl.Series:
