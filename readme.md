@@ -3,6 +3,7 @@
 Modernizing the ETL of my [largest project]("https://github.com/jeffbrennan/TexasPandemics")
 
 <img src="./images/asset_diagram.svg">
+
 ## Goals
 
 - Transition all csv/xlsx output to database tables
