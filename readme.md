@@ -2,6 +2,8 @@
 
 Modernizing the ETL of my [largest project]("https://github.com/jeffbrennan/TexasPandemics")
 
+![images/asset_diagram.svg]
+
 ## Goals
 
 - Transition all csv/xlsx output to database tables
@@ -22,8 +24,8 @@ Modernizing the ETL of my [largest project]("https://github.com/jeffbrennan/Texa
 
 ## Next steps
 - [x] Vitals data loaded and cleaned
-- [ ] Vaccination data loaded and cleaned
-- [ ] Dbt models reorganized
+- [x] Vaccination data loaded and cleaned
+- [x] Dbt models reorganized
 - [ ] Tests added to all scripts
 - [ ] Weekly run set up 
 - [ ] Migrate local parquet storage to aws s3
