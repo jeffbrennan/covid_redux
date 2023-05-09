@@ -3,7 +3,7 @@
 version: 2
 
 sources:
-  - name: dbt
+  - name: origin
     tables:
       - name: raw_county_cases_confirmed
       - name: raw_county_cases_probable

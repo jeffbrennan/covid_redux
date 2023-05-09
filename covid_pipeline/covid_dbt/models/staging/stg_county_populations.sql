@@ -1,2 +1,2 @@
 select *
-from {{source('dbt', 'county_populations')}}
+from {{source('origin', 'county_populations')}}
