@@ -27,22 +27,29 @@ def get_vitals(url: str) -> pd.DataFrame:
 
 @asset(
     name="raw_county_cases_confirmed",
-    key_prefix=["dbt"],
-    group_name="staging",
-    metadata={"table_name": "raw_county_cases_confirmed"},
-    io_manager_key='pandas_to_postgres_io_manager'
+    key_prefix=["origin"],
+    group_name="origin",
+    metadata={
+        "schema": "origin",
+        "table_name": "raw_county_cases_confirmed",
+    },
+    io_manager_key='pandas_io_manager'
 )
 def raw_county_cases_confirmed(context) -> pd.DataFrame:
     case_url = "https://www.dshs.texas.gov/sites/default/files/chs/data/COVID/Texas%20COVID-19%20New%20Confirmed%20Cases%20by%20County.xlsx"
     data = get_vitals(case_url)
     return data
 
+
 @asset(
     name="raw_county_cases_probable",
-    key_prefix=["dbt"],
-    group_name="staging",
-    metadata={"table_name": "raw_county_cases_probable"},
-    io_manager_key='pandas_to_postgres_io_manager'
+    key_prefix=["origin"],
+    group_name="origin",
+    metadata={
+        "schema": "origin",
+        "table_name": "raw_county_cases_probable"
+    },
+    io_manager_key='pandas_io_manager'
 )
 def raw_county_cases_probable(context) -> pd.DataFrame:
     case_url = "https://www.dshs.texas.gov/sites/default/files/chs/data/COVID/Texas%20COVID-19%20New%20Probable%20Cases%20by%20County.xlsx"
@@ -52,10 +59,13 @@ def raw_county_cases_probable(context) -> pd.DataFrame:
 
 @asset(
     name="raw_county_deaths",
-    key_prefix=["dbt"],
-    group_name="staging",
-    metadata={"table_name": "raw_county_deaths"},
-    io_manager_key='pandas_to_postgres_io_manager'
+    key_prefix=['origin'],
+    group_name="origin",
+    metadata={
+        "schema": "origin",
+        "table_name": "raw_county_deaths",
+    },
+    io_manager_key='pandas_io_manager'
 )
 def raw_county_deaths(context) -> pd.DataFrame:
     death_url = "https://www.dshs.texas.gov/sites/default/files/chs/data/COVID/Texas%20COVID-19%20Fatality%20Count%20Data%20by%20County.xlsx"
