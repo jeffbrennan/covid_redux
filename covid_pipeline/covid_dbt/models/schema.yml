@@ -14,3 +14,10 @@ models:
       - dbt_expectations.expect_table_row_count_to_equal_other_table:
           compare_model: ref('dim_county_names')
           row_condition: "county is not null"
+  - name: stacked_cases
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - level_type
+            - level
+            - date
