@@ -65,6 +65,7 @@ def rt_results(context, rt_prep_df: pl.DataFrame) -> pl.DataFrame:
         group_split_cases = cases_df_sample.partition_by(by=['level_type', 'level'], maintain_order=True)
 
         start_time = time.time()
+        # TODO: implement parallel processing
         rt_result = pl.concat([calculate_rt(i) for i in group_split_cases])
 
         rt_runtime = time.time() - start_time
@@ -90,4 +91,28 @@ def rt_results(context, rt_prep_df: pl.DataFrame) -> pl.DataFrame:
             .alias('date')
         )
     )
-    return rt_result
+    rt_output = get_rt(rt_prep_df_formatted)
+    # TODO: update with correct syntax
+    #  add stats to metadata context for logging in dbt
+    # context.add_metadata(rt_output['stats'])
+    return rt_output['result']
+
+# testing
+# schema = 'intermediate'
+# table_name = 'rt_prep_df'
+#
+# from dotenv import load_dotenv
+#
+# load_dotenv()
+#
+# from dagster import build_output_context, build_input_context
+#
+# context = build_input_context(
+#     upstream_output=build_output_context(name="def", step_key="123",
+#                                          metadata={'schema': 'origin', 'table_name': 'test'})
+# )
+#
+# conn = os.getenv('LOCAL_CONN')
+# query = f'select * from {schema}.{table_name}'
+# rt_prep_df = pl.read_database(query=query, connection_uri=conn)
+# test_result = rt_results(context, rt_prep_df)
