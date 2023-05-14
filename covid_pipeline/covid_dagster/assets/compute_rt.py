@@ -53,7 +53,7 @@ def rt_results(rt_prep_df: pl.DataFrame) -> pl.DataFrame:
 
         return final_result
 
-    def get_rt(cleaned_cases: pl.DataFrame) -> pl.DataFrame:
+    def get_rt(cleaned_cases: pl.DataFrame) -> dict:
         sample_levels = ['Harris', 'Bexar', 'Travis']
         num_levels = len(sample_levels)
 
@@ -70,13 +70,13 @@ def rt_results(rt_prep_df: pl.DataFrame) -> pl.DataFrame:
         rt_runtime = time.time() - start_time
         rt_runtime_avg = rt_runtime / num_levels
 
-        # output = {
-        #     'result': rt_results,
-        #     'stats': {'runtime': rt_runtime,
-        #               'runtime_avg': rt_runtime_avg
-        #               }
-        # }
-        return rt_result
+        output = {
+            'result': rt_result,
+            'stats': {'runtime': rt_runtime,
+                      'runtime_avg': rt_runtime_avg
+                      }
+        }
+        return output
 
     # convert date to string, then to datetime
     rt_prep_df_formatted = (
