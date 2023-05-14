@@ -12,6 +12,8 @@
 /airflow_attempt
 /airflow
 
+/app
+
 .idea/
 .vscode/
 
@@ -25,3 +27,4 @@ covid_pipeline/covid_dbt/config/.user.yml
 covid_pipeline/covid_dbt/config/profiles.yml
 
 covid_pipeline/covid_dagster/.nux/nux.yaml
+logs/dbt.log
