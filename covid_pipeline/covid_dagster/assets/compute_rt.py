@@ -23,7 +23,10 @@ def rt_results(rt_prep_df: pl.DataFrame) -> pl.DataFrame:
     def calculate_rt(df: pl.DataFrame) -> pl.DataFrame:
         print(df.get_column('level')[0])
 
-        case_timeseries = get_case_timeseries(df.get_column('Cases_MA_7day'), df.get_column('Date'))
+        case_timeseries = get_case_timeseries(df.get_column('cases_ma_7day'), df.get_column('date'))
+        assert case_timeseries.index.is_unique
+        assert type(case_timeseries.index) == pd.DatetimeIndex
+
         rt_results_raw = covid19.r_covid(case_timeseries)
 
         rt_results_clean = (
@@ -75,11 +78,16 @@ def rt_results(rt_prep_df: pl.DataFrame) -> pl.DataFrame:
         # }
         return rt_result
 
-    # rt_result = get_rt(rt_prep_df)
-    rt_result = (
+    # convert date to string, then to datetime
+    rt_prep_df_formatted = (
         rt_prep_df
-        .filter(pl.col('level').is_in(['Harris', 'Bexar', 'Travis']))
-        .with_columns(last_updated=pl.lit(time.time_ns()))
-
+        .with_columns(
+            rt_prep_df['date']
+            .dt
+            .strftime('%Y-%m-%d')
+            .str
+            .to_datetime('%Y-%m-%d')
+            .alias('date')
+        )
     )
     return rt_result
