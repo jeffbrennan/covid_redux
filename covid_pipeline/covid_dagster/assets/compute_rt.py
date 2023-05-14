@@ -16,9 +16,9 @@ import pandas as pd
     },
     io_manager_key='polars_io_manager'
 )
-def rt_results(rt_prep_df: pl.DataFrame) -> pl.DataFrame:
-    def get_case_timeseries(cases: pl.Series, dates: pl.Series) -> pd.Series:
-        return cases.to_pandas().set_axis(dates.to_pandas())
+def rt_results(context, rt_prep_df: pl.DataFrame) -> pl.DataFrame:
+    def get_case_timeseries(cases: pl.Series, rt_dates: pl.Series) -> pd.Series:
+        return cases.to_pandas().set_axis(rt_dates.to_pandas())
 
     def calculate_rt(df: pl.DataFrame) -> pl.DataFrame:
         print(df.get_column('level')[0])
