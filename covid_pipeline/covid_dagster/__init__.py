@@ -186,7 +186,7 @@ def test_my_io_manager_load_input(manager):
 # region call resources -----
 load_dotenv()
 DEPLOYMENT_NAME = os.getenv("DAGSTER_DEPLOYMENT")
-CONNECTION_STRING = os.getenv(f'{DEPLOYMENT_NAME}_conn')
+CONNECTION_STRING = os.getenv(f'{DEPLOYMENT_NAME}_CONN')
 
 # test_my_io_manager_handle_output(PandasManager(connection_string=CONNECTION_STRING))
 # test_my_io_manager_load_input(PandasManager(connection_string=CONNECTION_STRING))
