@@ -14,7 +14,7 @@ with
             left join {{ref ('dim_county_populations')}} c
             on a.county = c.county
             and a.date >= c.start_date
-            and (a.date <= c.end_date or c.end_date is null)
+            and (a.date < c.end_date or c.end_date is null)
         where case_type = 'confirmed'
     )
 select
@@ -29,25 +29,29 @@ select
     'TSA' as level_type,
     tsa   as level,
     date,
-    cases_daily,
-    population
+    sum(cases_daily) as cases_daily,
+    max(population) as population
 from base_df
+group by level, date
+
 union
 select
     'PHR' as level_type,
     phr   as level,
     date,
-    cases_daily,
-    population
+    sum(cases_daily) as cases_daily,
+    max(population) as population
 from base_df
+group by level, date
 union
 select
     'Metro Area' as level_type,
     metro_area   as level,
     date,
-    cases_daily,
-    population
+    sum(cases_daily) as cases_daily,
+    max(population) as population
 from base_df
+group by level, date
 union
 select
     'State'          as level_type,
