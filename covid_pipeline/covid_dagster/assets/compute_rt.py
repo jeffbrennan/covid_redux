@@ -21,25 +21,31 @@ def rt_results(rt_prep_df: pl.DataFrame) -> pl.DataFrame:
         return cases.to_pandas().set_axis(dates.to_pandas())
 
     def calculate_rt(df: pl.DataFrame) -> pl.DataFrame:
-        print(df.get_column('Level')[0])
+        print(df.get_column('level')[0])
 
         case_timeseries = get_case_timeseries(df.get_column('Cases_MA_7day'), df.get_column('Date'))
         rt_results_raw = covid19.r_covid(case_timeseries)
 
-        polars_rt_result = (
+        rt_results_clean = (
             pl.from_pandas(rt_results_raw.reset_index())
-            .rename({'index': 'Date',
+            .rename({'index': 'date',
                      'R_mean': 'rt',
                      'Q0.025': 'ci_low',
                      'Q0.975': 'ci_high'
                      }
                     )
-            [['Date', 'rt', 'ci_low', 'ci_high']]
+            [['date', 'rt', 'ci_low', 'ci_high']]
+            .with_columns(
+                pl.col('date').dt.date().alias('date')
+            )
         )
 
         final_result = (
-            df.
-            join(other=polars_rt_result, on='Date', how='left')
+            df
+            .with_columns(
+                pl.col('date').dt.date().alias('date')
+            )
+            .join(other=rt_results_clean, on='date', how='left')
         )
 
         return final_result
@@ -50,10 +56,10 @@ def rt_results(rt_prep_df: pl.DataFrame) -> pl.DataFrame:
 
         cases_df_sample = (
             cleaned_cases
-            .filter(pl.col('Level').is_in(sample_levels))
+            .filter(pl.col('level').is_in(sample_levels))
         )
 
-        group_split_cases = cases_df_sample.partition_by(by=['Level_Type', 'Level'], maintain_order=True)
+        group_split_cases = cases_df_sample.partition_by(by=['level_type', 'level'], maintain_order=True)
 
         start_time = time.time()
         rt_result = pl.concat([calculate_rt(i) for i in group_split_cases])
